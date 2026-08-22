@@ -1,0 +1,60 @@
+# Xcode
+build/
+build-release/
+build-test/
+DerivedData/
+.build/
+
+# Release artifacts. Since 0.3.1 the zip carries a 38 MB offline core, which does
+# not delta-compress — the repo would grow by the size of every release. Attach
+# dist/ to the remote's Release page instead.
+dist/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+*.xcuserdata/
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+.swiftpm/
+.package.resolved
+Package.resolved
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# App / runtime local data
+cpa-core/
+cpa-core.staging/
+cpa-core.backup/
+cpa-core.download/
+*.log
+*.tmp
+
+# Secrets / local credentials (never commit)
+*.p12
+*.pem
+*.key
+*.mobileprovision
+*.cer
+*.cert
+*.p8
+*.mobileprovision
+.env
+.env.*
+secrets/
+**/credentials.json
+**/service-account*.json
+# Local runtime under repo (if any)
+api-keys.json
+config.toml
+
+.tmp-probe/
+
+# XcodeGen generated (keep project for convenience — comment if regenerating only)
+# MacCLIProxyAPI.xcodeproj/
