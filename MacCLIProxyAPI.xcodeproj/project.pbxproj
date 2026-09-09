@@ -97,6 +97,7 @@
 		F9E57C653A9D470BB3704CAC /* MacCLIProxyAPIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ECBE2E1BE97FDE5CCED2FE4 /* MacCLIProxyAPIApp.swift */; };
 		FA823F96F6F1A6EA3C374895 /* ProviderConnectionTester.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0756E104E21A2A72184E0C4 /* ProviderConnectionTester.swift */; };
 		FB6F767C1B4AC5E45359476E /* ThinkingAliasService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40332CD83431764C1EAEA5B0 /* ThinkingAliasService.swift */; };
+		E99CE1553874325047B4FB80 /* CodexCPAAuthFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E94EDF0B51529455C545A4 /* CodexCPAAuthFile.swift */; };
 		FD29C5FDDBF7B3ECDFBDB4E1 /* CoreProcessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A842962DC2071A31A5DF3A /* CoreProcessService.swift */; };
 		FE47FF76B54009FD463B960E /* AgentLiveConfigWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E6B8524720414D97B78A7C /* AgentLiveConfigWriter.swift */; };
 /* End PBXBuildFile section */
@@ -115,6 +116,7 @@
 		002032D96C07B1FD9603FCC9 /* ProviderIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIconView.swift; sourceTree = "<group>"; };
 		038B11EF2A9E825A5AD41AFF /* UsageRecordsPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageRecordsPageView.swift; sourceTree = "<group>"; };
 		055560BAB4BBFBCCAB1909D9 /* CoreInstallServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreInstallServiceTests.swift; sourceTree = "<group>"; };
+		14E94EDF0B51529455C545A4 /* CodexCPAAuthFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexCPAAuthFile.swift; sourceTree = "<group>"; };
 		06A842962DC2071A31A5DF3A /* CoreProcessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreProcessService.swift; sourceTree = "<group>"; };
 		06F181F2D7EAB8FC4501342C /* RemoteAgentConfiguratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentConfiguratorTests.swift; sourceTree = "<group>"; };
 		09592542E5F91ED66892ECB3 /* KernelHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KernelHomeView.swift; sourceTree = "<group>"; };
@@ -384,6 +386,7 @@
 				E28F06BE83C00D20385E3D0C /* ContextWindowFormat.swift */,
 				75FAA9A1C224B2B204016F1B /* CoreConfigStore.swift */,
 				4DE2CCCBCB3650F10B4B8B15 /* CoreInstallService.swift */,
+				14E94EDF0B51529455C545A4 /* CodexCPAAuthFile.swift */,
 				06A842962DC2071A31A5DF3A /* CoreProcessService.swift */,
 				85A5EEC053F54BE1838FFCA0 /* DiagnosticService.swift */,
 				5B8B1F9C7A8D5677B04A5253 /* GuiConfigStore.swift */,
@@ -647,6 +650,7 @@
 				507E3F0D0523765511224643 /* ContextWindowFormat.swift in Sources */,
 				8DB583DF67644CCAED4F40BF /* CoreConfigStore.swift in Sources */,
 				24899B3C61B757654BA8ED15 /* CoreInstallService.swift in Sources */,
+				E99CE1553874325047B4FB80 /* CodexCPAAuthFile.swift in Sources */,
 				FD29C5FDDBF7B3ECDFBDB4E1 /* CoreProcessService.swift in Sources */,
 				8BA1F7DBDDD512206D1B1C2E /* DesignSystem.swift in Sources */,
 				4AA059613946E197DD87FC4B /* DiagnosticModels.swift in Sources */,
@@ -871,13 +875,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.maccliproxyapi.app;
 				PRODUCT_NAME = MacCLIProxyAPI;
 				SDKROOT = macosx;
@@ -890,13 +894,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.maccliproxyapi.app;
 				PRODUCT_NAME = MacCLIProxyAPI;
 				SDKROOT = macosx;

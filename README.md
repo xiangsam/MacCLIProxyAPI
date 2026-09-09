@@ -80,7 +80,9 @@ Codex、Claude、Antigravity、Kimi、xAI 等授权流程图形化引导。
 
 统一管理 Claude Code、Codex 的 live 配置（`~/.claude/settings.json`、
 `~/.codex/config.toml`）：按 Provider 保存多套接入方式，点击「启用」即写入配置文件，
-并标示当前生效的一套。首次启用会先备份原有配置，可随时切回「默认」。Codex 另可开启统一会话历史，
+并标示当前生效的一套。首次启用会先备份原有配置，可随时切回「默认」。启用 Codex「本机 CPA」
+时若缺少 `~/.codex/auth.json` 会写入占位，切走时只删除这份占位、不动 ChatGPT 登录文件；
+Desktop 不显示自定义模型时，可在 CPA 卡片上清理缓存并重建该文件。Codex 另可开启统一会话历史，
 将 `model_provider` 固定为 `custom`，避免切换 Provider 后历史会话分散到不同 bucket；
 以及远程压缩与同名模型隔离（见
 [远程压缩与同名模型隔离](#远程压缩与同名模型隔离)）。
@@ -155,13 +157,13 @@ MacCLIProxyAPI 把这些收敛到一个 **SwiftUI 原生应用** 中：
 从 [**Releases**](https://github.com/xiangsam/MacCLIProxyAPI/releases/latest) 下载其一：
 
 ```text
-MacCLIProxyAPI-1.0-macos-universal.dmg      # 推荐：打开后拖进「应用程序」
-MacCLIProxyAPI-1.0-macos-universal.zip      # 或者：解压后拖进「应用程序」
+MacCLIProxyAPI-1.1-macos-universal.dmg      # 推荐：打开后拖进「应用程序」
+MacCLIProxyAPI-1.1-macos-universal.zip      # 或者：解压后拖进「应用程序」
 ```
 
 ```bash
 # 可选：校验（把文件名换成你下载的那个）
-shasum -a 256 -c MacCLIProxyAPI-1.0-macos-universal.dmg.sha256
+shasum -a 256 -c MacCLIProxyAPI-1.1-macos-universal.dmg.sha256
 
 # 首次打开若提示无法验证开发者：
 xattr -dr com.apple.quarantine /Applications/MacCLIProxyAPI.app

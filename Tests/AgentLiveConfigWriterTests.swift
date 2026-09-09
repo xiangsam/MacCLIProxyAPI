@@ -1090,4 +1090,90 @@ final class AgentLiveConfigWriterTests: XCTestCase {
             sqlite3_finalize(stmt)
         }
     }
+
+    // MARK: - Codex CPA auth.json placeholder
+
+    func testCodexCPAAuthIdentifiesOnlyThePlaceholder() {
+        XCTAssertTrue(CodexCPAAuthFile.isCreatedByCPA(CodexCPAAuthFile.payloadData()))
+        XCTAssertTrue(CodexCPAAuthFile.isCreatedByCPA(text: #"{"OPENAI_API_KEY":"cpa","auth_mode":"apikey"}"#))
+        XCTAssertFalse(CodexCPAAuthFile.isCreatedByCPA(text: #"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-real"}"#))
+        XCTAssertFalse(CodexCPAAuthFile.isCreatedByCPA(text: #"{"auth_mode":"chatgpt","tokens":{"access_token":"t"}}"#))
+        XCTAssertFalse(
+            CodexCPAAuthFile.isCreatedByCPA(
+                text: #"{"auth_mode":"apikey","OPENAI_API_KEY":"cpa","tokens":{"access_token":"t"}}"#
+            )
+        )
+        XCTAssertFalse(CodexCPAAuthFile.isCreatedByCPA(text: "not-json"))
+    }
+
+    func testCodexCPAAuthCreatesOnlyWhenMissingAndRemovesOnlyPlaceholder() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(
+            "codex-cpa-auth-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let url = dir.appendingPathComponent("auth.json")
+        defer { try? fm.removeItem(at: dir) }
+
+        try CodexCPAAuthFile.sync(url: url, enableCPA: true)
+        XCTAssertTrue(fm.fileExists(atPath: url.path))
+        let created = try Data(contentsOf: url)
+        XCTAssertTrue(CodexCPAAuthFile.isCreatedByCPA(created))
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: created) as? [String: Any])
+        XCTAssertEqual(parsed["auth_mode"] as? String, "apikey")
+        XCTAssertEqual(parsed["OPENAI_API_KEY"] as? String, "cpa")
+
+        // Second enable must not clobber a file that already exists, even ours.
+        let marker = Data("leave-me".utf8)
+        try marker.write(to: url)
+        try CodexCPAAuthFile.sync(url: url, enableCPA: true)
+        XCTAssertEqual(try Data(contentsOf: url), marker)
+
+        // Foreign content is never deleted on switch-away.
+        try CodexCPAAuthFile.sync(url: url, enableCPA: false)
+        XCTAssertTrue(fm.fileExists(atPath: url.path))
+        XCTAssertEqual(try Data(contentsOf: url), marker)
+
+        try CodexCPAAuthFile.payloadData().write(to: url)
+        try CodexCPAAuthFile.sync(url: url, enableCPA: false)
+        XCTAssertFalse(fm.fileExists(atPath: url.path))
+
+        // Missing file is a no-op both ways.
+        try CodexCPAAuthFile.sync(url: url, enableCPA: false)
+        try CodexCPAAuthFile.sync(url: url, enableCPA: true)
+        XCTAssertTrue(fm.fileExists(atPath: url.path))
+    }
+
+    func testCodexCPAAuthRepairDesktopCustomModelsForceDeletesThenWritesPlaceholder() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(
+            "codex-cpa-repair-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        defer { try? fm.removeItem(at: dir) }
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let auth = dir.appendingPathComponent("auth.json")
+        let state = dir.appendingPathComponent(".codex-global-state.json")
+        let backup = dir.appendingPathComponent(".codex-global-state.json.back")
+        try Data(#"{"auth_mode":"chatgpt","tokens":{"access_token":"keep-me-not"}}"#.utf8)
+            .write(to: auth)
+        try Data("state".utf8).write(to: state)
+        try Data("backup".utf8).write(to: backup)
+
+        let result = try CodexCPAAuthFile.repairDesktopCustomModels(codexDirectory: dir)
+        XCTAssertEqual(
+            Set(result.removed),
+            ["auth.json", ".codex-global-state.json", ".codex-global-state.json.back"]
+        )
+        XCTAssertFalse(fm.fileExists(atPath: state.path))
+        XCTAssertFalse(fm.fileExists(atPath: backup.path))
+        XCTAssertTrue(CodexCPAAuthFile.isCreatedByCPA(try Data(contentsOf: auth)))
+
+        // Missing files are fine; auth.json is still rewritten.
+        try fm.removeItem(at: auth)
+        let again = try CodexCPAAuthFile.repairDesktopCustomModels(codexDirectory: dir)
+        XCTAssertTrue(again.removed.isEmpty)
+        XCTAssertTrue(CodexCPAAuthFile.isCreatedByCPA(try Data(contentsOf: auth)))
+    }
 }

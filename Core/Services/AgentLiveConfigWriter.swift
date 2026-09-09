@@ -8,6 +8,9 @@ enum AgentLiveConfigWriter {
             if profile.agent == .codex, settings.unifyCodexSessionHistory {
                 try repinOfficialCodexBucket()
             }
+            // Restore never deletes an auth.json that was absent from the snapshot; drop the
+            // CPA placeholder here if we created it after that capture.
+            try syncCodexCPAAuth(for: profile)
             return
         }
         // First non-default enable: snapshot current live as 「默认」 so user can switch back.
@@ -19,6 +22,15 @@ enum AgentLiveConfigWriter {
         case .codex:
             try writeCodex(profile, settings: settings)
         }
+        try syncCodexCPAAuth(for: profile)
+    }
+
+    /// Codex 本机 CPA needs a dummy `auth.json` so Codex does not prompt for ChatGPT login.
+    /// Other Codex profiles (official / custom / 默认) only remove that dummy — never a
+    /// real OAuth file.
+    private static func syncCodexCPAAuth(for profile: AgentProviderProfile) throws {
+        guard profile.agent == .codex else { return }
+        try CodexCPAAuthFile.sync(enableCPA: profile.isLocalCPA)
     }
 
     /// `model_provider` currently in the live Codex config, or nil when unset.

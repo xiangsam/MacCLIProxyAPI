@@ -104,12 +104,14 @@ enum RemoteAgentConfigurator {
         case .claude:
             return try applyClaude(sshHost: sshHost, profile: profile, messageSuffix: suffix)
         case .codex:
-            return try applyCodex(
+            let result = try applyCodex(
                 sshHost: sshHost,
                 profile: profile,
                 messageSuffix: suffix,
                 catalogModels: catalogModels
             )
+            try syncCodexCPAAuth(sshHost: sshHost, enableCPA: true)
+            return result
         }
     }
 
@@ -139,6 +141,9 @@ enum RemoteAgentConfigurator {
         // Restoring swaps the catalog back too, so a running daemon is just as stale here.
         let staleDaemon = agent == .codex && codexAppServerIsRunning(sshHost: sshHost)
         let reloadHint = staleDaemon ? "；远程 Codex 服务仍在用旧的模型列表，需重启后生效" : ""
+        if agent == .codex {
+            try syncCodexCPAAuth(sshHost: sshHost, enableCPA: false)
+        }
         return RemoteAgentApplyResult(
             agent: agent,
             remotePath: path,
@@ -198,13 +203,15 @@ enum RemoteAgentConfigurator {
         case .claude:
             return try applyClaude(sshHost: sshHost, profile: writeProfile, messageSuffix: suffix)
         case .codex:
-            return try applyCodex(
+            let result = try applyCodex(
                 sshHost: sshHost,
                 profile: writeProfile,
                 messageSuffix: suffix,
                 catalogModels: writeProfile.resolvedCodexCatalogModels,
                 unifyCodexSessionHistory: unifyCodexSessionHistory
             )
+            try syncCodexCPAAuth(sshHost: sshHost, enableCPA: profile.isLocalCPA)
+            return result
         }
     }
 
@@ -361,6 +368,27 @@ enum RemoteAgentConfigurator {
         let command = "pkill -u \"$(id -u)\" -f '\(codexAppServerPattern)'"
         _ = try RemoteSSHClient.runRemote(sshHost, command: command)
         return true
+    }
+
+    /// Mirror of local `CodexCPAAuthFile.sync`: create the dummy only when missing, delete
+    /// it only when the remote file is still the CPA placeholder.
+    private static func syncCodexCPAAuth(sshHost: RemoteSSHHost, enableCPA: Bool) throws {
+        let remotePath = homePath(".codex/auth.json")
+        if enableCPA {
+            if try RemoteSSHClient.readRemoteFile(sshHost, path: remotePath) != nil { return }
+            try RemoteSSHClient.writeRemoteFile(
+                sshHost,
+                path: remotePath,
+                contents: CodexCPAAuthFile.payloadText,
+                mode: "600"
+            )
+            return
+        }
+        guard let existing = try RemoteSSHClient.readRemoteFile(sshHost, path: remotePath),
+              CodexCPAAuthFile.isCreatedByCPA(text: existing)
+        else { return }
+        let quoted = shellQuoteHomePath(remotePath)
+        _ = try? RemoteSSHClient.runRemote(sshHost, command: "rm -f \(quoted)")
     }
 
     private static func homePath(_ relative: String) -> String {

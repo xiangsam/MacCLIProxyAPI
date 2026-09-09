@@ -28,6 +28,7 @@ struct AgentsPageView: View {
     @State private var editorTarget: AgentEditorTarget?
     @State private var pendingDeleteProfile: AgentProviderProfile?
     @State private var pendingDeleteSession: AgentSessionRecord?
+    @State private var pendingFixCodexDesktopModels: Bool?
     /// `model_provider` currently in `~/.codex/config.toml` — the only thing that decides the bucket.
     @State private var codexLiveBucket: String?
 
@@ -77,6 +78,17 @@ struct AgentsPageView: View {
             confirmLabel: { _ in "删除会话" },
             message: { "将永久删除 \($0.filePath)，无法恢复。" },
             action: deleteSession
+        )
+        .confirmDestructive(
+            $pendingFixCodexDesktopModels,
+            title: "修复 Codex Desktop 自定义模型？",
+            confirmLabel: { _ in "删除并重建" },
+            message: { _ in
+                "Codex Desktop 会把登录态和模型列表缓存在 ~/.codex 里，导致自定义模型不出现。"
+                    + "将删除（若存在）auth.json、.codex-global-state.json、.codex-global-state.json.back，"
+                    + "然后写入本机 CPA 使用的 auth.json。ChatGPT 登录态会丢失，完成后请重启 Codex Desktop。"
+            },
+            action: { _ in fixCodexDesktopCustomModels() }
         )
     }
 
@@ -429,119 +441,133 @@ struct AgentsPageView: View {
         }()
 
         return GlassCard(padding: 16) {
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: iconName)
-                    .font(.title3)
-                    .foregroundStyle(isCurrent ? Color.green : (profile.isOfficial ? Color.purple : Color.secondary))
-                    .frame(width: 38, height: 38)
-                    .background(
-                        (isCurrent ? Color.green : (profile.isOfficial ? Color.purple : Color.secondary)).opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 10)
-                    )
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 14) {
+                    Image(systemName: iconName)
+                        .font(.title3)
+                        .foregroundStyle(isCurrent ? Color.green : (profile.isOfficial ? Color.purple : Color.secondary))
+                        .frame(width: 38, height: 38)
+                        .background(
+                            (isCurrent ? Color.green : (profile.isOfficial ? Color.purple : Color.secondary)).opacity(0.10),
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
-                        Text(profile.name)
-                            .font(.headline)
-                        if profile.isDefault {
-                            Text("默认")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.15), in: Capsule())
-                                .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            Text(profile.name)
+                                .font(.headline)
+                            if profile.isDefault {
+                                Text("默认")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.orange)
+                            }
+                            if profile.isOfficial {
+                                Text("官方")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.purple.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.purple)
+                            }
+                            if profile.isLocalCPA {
+                                Text("CPA")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.blue)
+                            }
+                            if isCurrent {
+                                Text("当前")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.green)
+                            }
                         }
-                        if profile.isOfficial {
-                            Text("官方")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.purple.opacity(0.15), in: Capsule())
-                                .foregroundStyle(.purple)
-                        }
-                        if profile.isLocalCPA {
-                            Text("CPA")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.15), in: Capsule())
-                                .foregroundStyle(.blue)
-                        }
-                        if isCurrent {
-                            Text("当前")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.green.opacity(0.15), in: Capsule())
-                                .foregroundStyle(.green)
-                        }
-                    }
-                    Text(endpointText)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .textSelection(.enabled)
-                    if let summary = modelSummary(profile) {
-                        Text(summary)
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                        Text(endpointText)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .textSelection(.enabled)
+                        if let summary = modelSummary(profile) {
+                            Text(summary)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer()
+
+                    if profile.isDefault {
+                        Menu {
+                            Button("删除快照", role: .destructive) {
+                                pendingDeleteProfile = profile
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .menuStyle(.borderlessButton)
+                    } else if profile.isOfficial {
+                        // Built-in official profile is fixed: no edit/delete menu
+                    } else if profile.isLocalCPA {
+                        Menu {
+                            Button("编辑模型映射") {
+                                editorTarget = .edit(profile)
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .menuStyle(.borderlessButton)
+                    } else {
+                        Menu {
+                            Button("编辑") {
+                                editorTarget = .edit(profile)
+                            }
+                            Divider()
+                            Button("删除", role: .destructive) {
+                                pendingDeleteProfile = profile
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .menuStyle(.borderlessButton)
+                    }
+
+                    if isCurrent {
+                        Button {} label: {
+                            Label("已启用", systemImage: "checkmark.circle.fill")
+                                .frame(minWidth: 72)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(true)
+                    } else {
+                        Button {
+                            enable(profile)
+                        } label: {
+                            Label("启用", systemImage: "checkmark.circle")
+                                .frame(minWidth: 72)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isBusy)
                     }
                 }
 
-                Spacer()
-
-                if profile.isDefault {
-                    Menu {
-                        Button("删除快照", role: .destructive) {
-                            pendingDeleteProfile = profile
-                        }
+                if profile.isLocalCPA && profile.agent == .codex {
+                    Button {
+                        pendingFixCodexDesktopModels = true
                     } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .menuStyle(.borderlessButton)
-                } else if profile.isOfficial {
-                    // Built-in official profile is fixed: no edit/delete menu
-                } else if profile.isLocalCPA {
-                    Menu {
-                        Button("编辑模型映射") {
-                            editorTarget = .edit(profile)
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .menuStyle(.borderlessButton)
-                } else {
-                    Menu {
-                        Button("编辑") {
-                            editorTarget = .edit(profile)
-                        }
-                        Divider()
-                        Button("删除", role: .destructive) {
-                            pendingDeleteProfile = profile
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .menuStyle(.borderlessButton)
-                }
-
-                if isCurrent {
-                    Button {} label: {
-                        Label("已启用", systemImage: "checkmark.circle.fill")
-                            .frame(minWidth: 72)
+                        Label("修复 Codex Desktop 自定义模型…", systemImage: "wrench.and.screwdriver")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(true)
-                } else {
-                    Button {
-                        enable(profile)
-                    } label: {
-                        Label("启用", systemImage: "checkmark.circle")
-                            .frame(minWidth: 72)
-                    }
-                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                     .disabled(isBusy)
+                    .help("删除 Desktop 缓存的登录态和全局状态，再写入 CPA 的 auth.json")
                 }
             }
         }
@@ -1047,6 +1073,23 @@ struct AgentsPageView: View {
                 )
             }
             sessions = AgentSessionService.listSessions()
+        } catch {
+            appState.flash(error.localizedDescription, error: true)
+        }
+    }
+
+    private func fixCodexDesktopCustomModels() {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let result = try CodexCPAAuthFile.repairDesktopCustomModels()
+            if result.removed.isEmpty {
+                appState.flash("已写入 CPA auth.json，请重启 Codex Desktop")
+            } else {
+                appState.flash(
+                    "已删除 \(result.removed.joined(separator: "、"))，并写入 CPA auth.json。请重启 Codex Desktop"
+                )
+            }
         } catch {
             appState.flash(error.localizedDescription, error: true)
         }
