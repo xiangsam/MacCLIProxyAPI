@@ -27,14 +27,6 @@ targets:
         excludes:
           - "**/.DS_Store"
       - path: Core
-      # The app rebuilds a patched core after an upstream core update, so it ships
-      # the same script and patches the repo uses. The folder reference keeps the
-      # directory name the script expects.
-      - path: patches
-        type: folder
-        buildPhase: resources
-      - path: scripts/build-core.sh
-        buildPhase: resources
     dependencies:
       - package: Yams
     settings:
