@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import SwiftUI
 
 extension Notification.Name {
@@ -36,6 +37,12 @@ struct MacCLIProxyAPIApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .appTermination) {
+                Button("退出 MacCLIProxyAPI") {
+                    AppDelegate.requestUserQuit()
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
         }
 
         MenuBarExtra {
@@ -95,9 +102,53 @@ private struct MenuBarLabelView: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowCloseObserver: NSObjectProtocol?
 
+    /// Set right before we call `NSApp.terminate` from our own UI (menu-bar "退出" button,
+    /// the app-menu Quit item / ⌘Q). Anything that reaches `applicationShouldTerminate`
+    /// without this flag — and without a logout/restart/shutdown reason — is treated as a
+    /// termination the user did not ask for (e.g. AppKit's automatic termination of
+    /// windowless background apps) and gets refused.
+    private static var userRequestedQuit = false
+
+    /// Route a deliberate, user-initiated quit through the flag `applicationShouldTerminate`
+    /// checks. Always call this instead of `NSApp.terminate` directly.
+    static func requestUserQuit() {
+        userRequestedQuit = true
+        NSApp.terminate(nil)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Keep menu-bar agent alive after the main window is closed.
         false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Self.isSystemSessionEndingQuit() {
+            return .terminateNow
+        }
+        if Self.userRequestedQuit {
+            Self.userRequestedQuit = false
+            return .terminateNow
+        }
+        // Not a logout/restart/shutdown, and not something our own UI asked for —
+        // e.g. AppKit deciding this windowless background app looks idle and can be
+        // auto-terminated. Refuse so the menu-bar agent keeps running.
+        return .terminateCancel
+    }
+
+    /// macOS delivers a `kAEQuitApplication` Apple Event carrying `kAEQuitReason` only when
+    /// the quit is part of a login session ending (logout/restart/shutdown). A plain quit —
+    /// whether from our own UI or AppKit's automatic termination — carries no such reason.
+    private static func isSystemSessionEndingQuit() -> Bool {
+        guard let reason = NSAppleEventManager.shared().currentAppleEvent?
+            .attributeDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue
+        else { return false }
+        switch reason {
+        case kAEQuitAll, kAEShutDown, kAERestart, kAEReallyLogOut,
+             kAELogOut, kAEShowRestartDialog, kAEShowShutdownDialog:
+            return true
+        default:
+            return false
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -107,6 +158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Opt out of AppKit's automatic termination so a windowless menu-bar agent isn't
+        // silently quit for looking idle; applicationShouldTerminate below is the backstop.
+        ProcessInfo.processInfo.disableAutomaticTermination("菜单栏常驻，需要持续运行")
+
         // Observe main window close so we can leave Dock and stay menu-bar only.
         windowCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,

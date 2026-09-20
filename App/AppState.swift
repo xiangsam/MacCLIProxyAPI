@@ -926,7 +926,7 @@ final class AppState {
         NSApp.activationPolicy() == .accessory
     }
 
-    private var statusPollSeconds: UInt64 { isMenuBarOnly ? 60 : 10 }
+    private var statusPollSeconds: UInt64 { isMenuBarOnly ? 1800 : 10 }
     private var quotaPollSeconds: UInt64 { isMenuBarOnly ? 600 : 120 }
 
     private func startPolling() {

@@ -287,7 +287,7 @@ struct MenuBarPanelView: View {
             }
 
             Button {
-                NSApp.terminate(nil)
+                AppDelegate.requestUserQuit()
             } label: {
                 Text("退出")
                     .font(.caption.weight(.medium))

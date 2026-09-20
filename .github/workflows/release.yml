@@ -1,0 +1,70 @@
+name: Release
+
+# Push a tag like `v1.1` to build the app with scripts/release.sh and publish
+# a GitHub Release with the dmg/zip + checksums it produces.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Derive version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync MARKETING_VERSION in project.yml with the tag
+        run: |
+          python3 - "${{ steps.version.outputs.version }}" "${{ github.run_number }}" <<'PY'
+          import re
+          import sys
+
+          marketing_version, build_number = sys.argv[1], sys.argv[2]
+          path = "project.yml"
+          text = open(path, encoding="utf-8").read()
+          text, n1 = re.subn(
+              r'MARKETING_VERSION:\s*"[^"]*"',
+              f'MARKETING_VERSION: "{marketing_version}"',
+              text,
+          )
+          text, n2 = re.subn(
+              r'CURRENT_PROJECT_VERSION:\s*"[^"]*"',
+              f'CURRENT_PROJECT_VERSION: "{build_number}"',
+              text,
+          )
+          if n1 == 0 or n2 == 0:
+              sys.exit("MARKETING_VERSION or CURRENT_PROJECT_VERSION not found in project.yml")
+          open(path, "w", encoding="utf-8").write(text)
+          print(f"project.yml -> MARKETING_VERSION={marketing_version} CURRENT_PROJECT_VERSION={build_number}")
+          PY
+
+      - name: Build & package (scripts/release.sh)
+        run: ./scripts/release.sh "${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: MacCLIProxyAPI ${{ steps.version.outputs.version }}
+          body_path: dist/RELEASE-NOTES-${{ steps.version.outputs.version }}.md
+          files: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+            dist/*.zip
+            dist/*.zip.sha256
