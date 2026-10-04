@@ -164,13 +164,13 @@ MacCLIProxyAPI 把这些收敛到一个 **SwiftUI 原生应用** 中：
 从 [**Releases**](https://github.com/xiangsam/MacCLIProxyAPI/releases/latest) 下载其一：
 
 ```text
-MacCLIProxyAPI-1.3-macos-universal.dmg      # 推荐：打开后拖进「应用程序」
-MacCLIProxyAPI-1.3-macos-universal.zip      # 或者：解压后拖进「应用程序」
+MacCLIProxyAPI-1.3.1-macos-universal.dmg      # 推荐：打开后拖进「应用程序」
+MacCLIProxyAPI-1.3.1-macos-universal.zip      # 或者：解压后拖进「应用程序」
 ```
 
 ```bash
 # 可选：校验（把文件名换成你下载的那个）
-shasum -a 256 -c MacCLIProxyAPI-1.3-macos-universal.dmg.sha256
+shasum -a 256 -c MacCLIProxyAPI-1.3.1-macos-universal.dmg.sha256
 
 # 首次打开若提示无法验证开发者：
 xattr -dr com.apple.quarantine /Applications/MacCLIProxyAPI.app

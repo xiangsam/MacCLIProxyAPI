@@ -57,11 +57,19 @@ enum ModelCapabilityStore {
                 ))
             }
         }
-        let records = source.models.map { id, model in
-            let serving = (variants[id] ?? []).sorted { $0.id < $1.id }
-            let levels = Set(serving.flatMap { $0.reasoningOptions ?? [] }
-                .filter { $0.type == "effort" }.flatMap { $0.values ?? [] }.compactMap { $0 })
-            return ModelCapabilityRecord(
+        var records: [ModelCapabilityRecord] = []
+        for (id, model) in source.models {
+            let serving: [ModelCapabilityVariant] = (variants[id] ?? []).sorted { $0.id < $1.id }
+            var levels: Set<String> = []
+            for variant in serving {
+                for option in variant.reasoningOptions ?? [] where option.type == "effort" {
+                    for value in option.values ?? [] {
+                        if let value { levels.insert(value) }
+                    }
+                }
+            }
+            let sourcePath = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+            records.append(ModelCapabilityRecord(
                 id: id, name: model.name ?? id, lab: String(id.split(separator: "/").first ?? ""),
                 description: model.description, reasoning: model.reasoning,
                 reasoningLevels: levels.isEmpty ? nil : levels.sorted(),
@@ -69,10 +77,11 @@ enum ModelCapabilityStore {
                 contextWindow: model.limit?.context, maxInputTokens: model.limit?.input,
                 maxOutputTokens: model.limit?.output, toolCall: model.tool_call,
                 structuredOutput: model.structured_output, sourceUpdatedAt: model.last_updated,
-                sourceURL: "https://models.dev/models/" + id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)! + "/",
+                sourceURL: "https://models.dev/models/" + sourcePath + "/",
                 providerVariants: serving
-            )
-        }.sorted { $0.id < $1.id }
+            ))
+        }
+        records.sort { $0.id < $1.id }
         return ModelCapabilitySnapshot(source: sourceURL.absoluteString, fetchedAt: fetchedAt,
             unmappedProviderModelCount: unmapped, models: records)
     }
