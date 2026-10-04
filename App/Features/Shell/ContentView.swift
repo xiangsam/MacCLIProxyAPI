@@ -113,7 +113,7 @@ struct ContentView: View {
             }
 
             Section {
-                ForEach([AppPage.thinkingAliases, .agents, .remoteSSH, .usageRecords], id: \.self) { page in
+                ForEach([AppPage.modelCapabilities, .thinkingAliases, .agents, .remoteSSH, .usageRecords], id: \.self) { page in
                     pageRow(page)
                 }
             } header: {
@@ -171,6 +171,8 @@ struct ContentView: View {
                 QuotaPageView()
             case .thinkingAliases:
                 ThinkingAliasesPageView()
+            case .modelCapabilities:
+                ModelCapabilitiesPageView()
             case .agents:
                 AgentsPageView()
             case .remoteSSH:

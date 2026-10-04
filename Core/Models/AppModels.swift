@@ -5,6 +5,7 @@ enum AppPage: String, CaseIterable, Identifiable, Hashable {
     case versions
     case config
     case thinkingAliases
+    case modelCapabilities
     case oauth
     case api
     case authFiles
@@ -21,6 +22,7 @@ enum AppPage: String, CaseIterable, Identifiable, Hashable {
         case .home: return "首页"
         case .versions: return "版本"
         case .config: return "配置"
+        case .modelCapabilities: return "模型能力"
         case .thinkingAliases: return "模型别名"
         case .oauth: return "订阅授权"
         case .api: return "上游 API"
@@ -38,6 +40,7 @@ enum AppPage: String, CaseIterable, Identifiable, Hashable {
         case .home: return "house"
         case .versions: return "shippingbox"
         case .config: return "gearshape"
+        case .modelCapabilities: return "list.bullet.rectangle"
         case .thinkingAliases: return "arrow.triangle.branch"
         case .oauth: return "person.badge.key"
         case .api: return "network"
@@ -55,7 +58,7 @@ enum AppPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         // `usageRecords` reads the local SQLite history, not the management API, so past
         // requests stay browsable while the kernel is stopped.
-        case .home, .versions, .config, .diagnostics, .agents, .remoteSSH, .usageRecords:
+        case .home, .versions, .config, .diagnostics, .agents, .remoteSSH, .usageRecords, .modelCapabilities:
             return false
         default:
             return true
