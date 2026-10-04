@@ -204,7 +204,7 @@ enum CoreConfigStore {
         routing["session-affinity-ttl"] = Self.normalizeSessionAffinityTTL(gui.routingSessionAffinityTtl)
         root["routing"] = routing
 
-        applyCodexOverlappingExclusions(to: &root, enabled: gui.routingExcludeCodexOverlappingModels)
+        applyOverlappingModelPolicy(gui.overlappingModelPolicy, to: &root)
         applyCodexOptimizeMultiAgentV2(to: &root, enabled: gui.optimizeCodexMultiAgentV2)
 
         return try Yams.dump(object: root, width: -1, sortKeys: false)
@@ -253,18 +253,32 @@ enum CoreConfigStore {
         "gpt-5.3-codex",
     ]
 
-    private static func applyCodexOverlappingExclusions(to root: inout [String: Any], enabled: Bool) {
+    static func legacyOverlappingModelPolicy(yaml: String, apiOnly: Bool) -> OverlappingModelPolicy {
+        // The explicit old global choice wins if an old client profile created a conflict.
+        if apiOnly { return .apiOnly }
+        guard let root = try? Yams.load(yaml: yaml) as? [String: Any] else { return .automatic }
+        let patterns = Set(codexOverlappingModelExclusions)
+        for section in CodexSubscriptionIsolation.credentialSections {
+            for row in root[section] as? [[String: Any]] ?? [] {
+                let exclusions = Set(row["excluded-models"] as? [String] ?? [])
+                if !patterns.isDisjoint(with: exclusions) { return .subscriptionOnly }
+            }
+        }
+        return .automatic
+    }
+
+    /// Apply both sides together so a saved policy can never exclude both source classes.
+    static func applyOverlappingModelPolicy(_ policy: OverlappingModelPolicy, to root: inout [String: Any]) {
         var excluded = (root["oauth-excluded-models"] as? [String: Any]) ?? [:]
-        if enabled {
-            excluded["codex"] = codexOverlappingModelExclusions
-        } else {
-            excluded.removeValue(forKey: "codex")
-        }
-        if excluded.isEmpty {
-            root.removeValue(forKey: "oauth-excluded-models")
-        } else {
-            root["oauth-excluded-models"] = excluded
-        }
+        let existing = (excluded["codex"] as? [String]) ?? []
+        let managed = Set(codexOverlappingModelExclusions.map { $0.lowercased() })
+        var next = existing.filter { !managed.contains($0.lowercased()) }
+        if policy == .apiOnly { next += codexOverlappingModelExclusions }
+        if next.isEmpty { excluded.removeValue(forKey: "codex") }
+        else { excluded["codex"] = next }
+        if excluded.isEmpty { root.removeValue(forKey: "oauth-excluded-models") }
+        else { root["oauth-excluded-models"] = excluded }
+        _ = CodexSubscriptionIsolation.apply(enabled: policy == .subscriptionOnly, to: &root)
     }
 
     /// Write CPA `codex.optimize-multi-agent-v2`, preserving sibling keys under `codex:`.

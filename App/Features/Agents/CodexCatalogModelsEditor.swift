@@ -172,7 +172,7 @@ struct CodexCatalogModelsEditor: View {
                     }
                     Spacer(minLength: 0)
                     if isDefault {
-                        Text("默认")
+                        Text("快照")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.orange)
                             .padding(.horizontal, 8)

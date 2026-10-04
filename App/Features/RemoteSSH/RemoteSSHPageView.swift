@@ -25,15 +25,7 @@ struct RemoteSSHPageView: View {
         case unifyHistory(RemoteSSHHost)
         case migrateSessions(RemoteSSHHost)
 
-        var isUnifyHistory: Bool {
-            if case .unifyHistory = self { return true }
-            return false
-        }
 
-        var isMigrateSessions: Bool {
-            if case .migrateSessions = self { return true }
-            return false
-        }
     }
 
     private struct ProviderEditorTarget: Identifiable, Equatable {
@@ -59,7 +51,7 @@ struct RemoteSSHPageView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("远程 SSH")
                         .font(.title3.weight(.semibold))
-                    Text("配置 SSH 主机，用 Provider 列表切换远程 Claude / Codex（与本地智能体相同）")
+                    Text("从本地接入配置同步到远程 Claude / Codex；写入前备份远端配置")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -166,7 +158,7 @@ struct RemoteSSHPageView: View {
         )
         .confirmDestructive(
             $pendingDeleteProvider,
-            title: "删除远程 Provider？",
+            title: "删除远程接入配置？",
             confirmLabel: { _ in "删除" },
             message: deleteRemoteProviderWarning,
             action: { profile in
@@ -374,7 +366,7 @@ struct RemoteSSHPageView: View {
                 .font(.caption)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text("远程压缩：由服务端压缩上下文，Codex 只在 model_providers 的 name 等于 OpenAI 时才启用，逐个 Provider 在编辑里开。")
+                Text("远程压缩：由服务端压缩上下文，Codex 只在 model_providers 的 name 等于 OpenAI 时才启用，在本地自定义接入配置中设置后同步；官方接入自动使用官方能力。")
                 Text(remoteCompactionStateText(live))
                     .foregroundStyle(.tertiary)
             }
@@ -386,68 +378,40 @@ struct RemoteSSHPageView: View {
     }
 
     private func remoteCompactionStateText(_ live: AgentProviderProfile?) -> String {
-        guard let live else { return "此主机当前没有启用中的 Codex Provider。" }
-        guard live.claimsOpenAIProvider else {
-            return "当前「\(live.name)」未开启，走 Codex 自带的本地压缩。"
+        guard let applied = providerState.appliedProfiles[AgentKind.codex.rawValue] else {
+            return "尚无可核验的写入记录；远端压缩状态未知。"
         }
-        return live.codexSubscriptionOnly
-            ? "当前「\(live.name)」已开启，且同名 GPT 模型已在本机 CPA 隔离到 Codex 订阅。"
-            : "当前「\(live.name)」已开启；未隔离同名模型，压缩可能落到没有压缩端点的上游。"
+        guard !applied.isDefault else { return "已还原接管前配置；远端压缩状态未核验。" }
+        let configured = applied.isOfficial || applied.claimsOpenAIProvider
+        return (configured ? "上次写入已配置服务端压缩；能力未验证。" : "上次写入未启用服务端压缩。")
+            + " CPA 同名模型来源：" + appState.guiConfig.snapshot().overlappingModelPolicy.title
     }
 
     private func remoteCodexSettingsCard(_ host: RemoteSSHHost) -> some View {
         GlassCard(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("统一会话历史")
-                            .font(.headline)
-                        Text("把远程 ~/.codex/config.toml 的 model_provider 固定为 custom。本应用写入的 Provider 本来就在 custom 桶，这个开关针对的是远端 Codex 自带的默认配置（含「默认」Provider）——它原本写进 openai 桶。关闭只停止迁移，不会改回 openai。「迁移已有」会把远程 openai 旧会话改标签并入同一桶（SSH 拉取→本机改写→写回，备份在本机）。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                Text("远程会话历史").font(.headline)
+                Toggle("下次应用官方接入时也使用共享会话库", isOn: Binding(
+                    get: { providerState.unifyCodexSessionHistory },
+                    set: { enabled in
+                        do {
+                            providerState = try RemoteAgentProviderStore.updateCodexHistorySettings(
+                                hostID: host.id, unify: enabled, migrate: false
+                            )
+                            appState.flash("策略已保存，下次应用到远程时生效")
+                        } catch { appState.flash(error.localizedDescription, error: true) }
                     }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        // Reading the pending write keeps the switch on the position the user
-                        // just chose, and snaps it back if they cancel.
-                        get: {
-                            pendingRemoteWrite?.isUnifyHistory == true
-                                || providerState.unifyCodexSessionHistory
-                        },
-                        set: { enabled in
-                            // Turning it off changes nothing on the host, so it needs no dialog.
-                            if enabled {
-                                pendingRemoteWrite = .unifyHistory(host)
-                            } else {
-                                setRemoteUnify(host, enabled: false)
-                            }
-                        }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .disabled(isBusy)
+                ))
+                .disabled(isBusy)
+                Text("策略不立即修改远端文件或旧会话。自定义接入始终使用 custom；官方接入可选择共享或官方 openai 会话库。")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("当前官方配置改用共享库") { pendingRemoteWrite = .unifyHistory(host) }
+                    Button("迁移已有官方会话…") { pendingRemoteWrite = .migrateSessions(host) }
                 }
-                Divider().opacity(0.4)
-                HStack(spacing: 20) {
-                    Toggle("迁移已有 openai 会话", isOn: Binding(
-                        get: {
-                            pendingRemoteWrite?.isMigrateSessions == true
-                                || providerState.migrateCodexSessionsOnUnify
-                        },
-                        set: { enabled in
-                            // Only ticking it rewrites remote session files.
-                            if enabled, providerState.unifyCodexSessionHistory {
-                                pendingRemoteWrite = .migrateSessions(host)
-                            } else {
-                                setRemoteMigrate(host, enabled: enabled)
-                            }
-                        }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .disabled(isBusy || !providerState.unifyCodexSessionHistory)
-                    Spacer()
-                }
-                .font(.caption)
+                .disabled(isBusy)
+                Text("迁移是独立操作，通过 SSH 读取和写回；修改前的备份保存在本机。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -457,21 +421,19 @@ struct RemoteSSHPageView: View {
         return GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Provider")
+                    Text("本地接入配置")
                         .font(.headline)
                     Text("\(filteredProviders.count)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button {
-                        providerEditor = .init(host: host, agent: selectedAgent, profile: nil)
-                    } label: {
-                        Label("添加", systemImage: "plus")
-                    }
-                    .disabled(isBusy)
+                    Button("从本地同步列表") { reloadProviders() }
+                        .disabled(isBusy)
+                    Button("管理本地配置") { appState.select(.agents) }
+
                 }
 
-                Text("与本地智能体相同：点「启用」切换远程配置。首次启用非「默认」会把远端现有文件存为「默认」；每次写入还会在 ~/.maccliproxy-agent-backups/ 留时间戳备份。多次配置可随时切回「默认」或其它 Provider。")
+                Text("列表内容来自本地客户端接入配置。本机 CPA 地址会转换为远端可达地址；其他上游保持原地址与密钥。刷新只更新待同步内容，点击「应用到远程」才写入主机。首次写入保存接管前配置，每次写入另留备份。状态只表示最后一次写入记录，远端文件及运行中的客户端尚未核验。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -480,8 +442,8 @@ struct RemoteSSHPageView: View {
                 if filteredProviders.isEmpty {
                     CenteredEmptyState(
                         systemImage: "server.rack",
-                        title: "暂无 Provider",
-                        message: "刷新或测试连接后会自动加入本机 CPA；也可手动添加"
+                        title: "暂无接入配置",
+                        message: "先在客户端接入页添加配置，再同步此列表"
                     )
                     .frame(minHeight: 120)
                 } else {
@@ -500,6 +462,7 @@ struct RemoteSSHPageView: View {
         host: RemoteSSHHost,
         isCurrent: Bool
     ) -> some View {
+        let statusColor: Color = isCurrent && providerState.needsSync(profile) ? .orange : .green
         let iconName: String = {
             if profile.isDefault { return "arrow.uturn.backward.circle.fill" }
             if profile.isOfficial { return "shield.checkmark.fill" }
@@ -519,10 +482,10 @@ struct RemoteSSHPageView: View {
         return HStack(alignment: .center, spacing: 14) {
             Image(systemName: iconName)
                 .font(.title3)
-                .foregroundStyle(isCurrent ? Color.green : (profile.isOfficial ? Color.purple : Color.secondary))
+                .foregroundStyle(isCurrent ? statusColor : (profile.isOfficial ? Color.purple : Color.secondary))
                 .frame(width: 38, height: 38)
                 .background(
-                    (isCurrent ? Color.green : (profile.isOfficial ? Color.purple : Color.secondary)).opacity(0.10),
+                    (isCurrent ? statusColor : (profile.isOfficial ? Color.purple : Color.secondary)).opacity(0.10),
                     in: RoundedRectangle(cornerRadius: 10)
                 )
 
@@ -531,7 +494,7 @@ struct RemoteSSHPageView: View {
                     Text(profile.name)
                         .font(.headline)
                     if profile.isDefault {
-                        Text("默认")
+                        Text("快照")
                             .font(.caption2.weight(.bold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -555,12 +518,12 @@ struct RemoteSSHPageView: View {
                             .foregroundStyle(.blue)
                     }
                     if isCurrent {
-                        Text("当前")
+                        Text(providerState.needsSync(profile) ? "待同步" : "上次已写入")
                             .font(.caption2.weight(.bold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.15), in: Capsule())
-                            .foregroundStyle(.green)
+                            .background(statusColor.opacity(0.15), in: Capsule())
+                            .foregroundStyle(statusColor)
                     }
                 }
                 Text(endpointText)
@@ -568,6 +531,8 @@ struct RemoteSSHPageView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .textSelection(.enabled)
+                Text(providerState.sourceProfileIDs[profile.id] != nil ? "来源：本地配置 · 远端未核验" : "主机专属配置 · 远端未核验")
+                    .font(.caption2).foregroundStyle(.secondary)
                 if let summary = modelSummary(profile) {
                     Text(summary)
                         .font(.caption)
@@ -592,10 +557,14 @@ struct RemoteSSHPageView: View {
                 // Built-in official profile is fixed: no edit/delete menu
             } else {
                 Menu {
-                    Button(profile.isLocalCPA ? "编辑模型映射" : "编辑") {
-                        providerEditor = .init(host: host, agent: selectedAgent, profile: profile)
+                    Button(providerState.sourceProfileIDs[profile.id] != nil ? "在本地编辑" : "编辑") {
+                        if providerState.sourceProfileIDs[profile.id] != nil {
+                            appState.select(.agents)
+                        } else {
+                            providerEditor = .init(host: host, agent: selectedAgent, profile: profile)
+                        }
                     }
-                    if !profile.isLocalCPA {
+                    if !profile.isLocalCPA && providerState.sourceProfileIDs[profile.id] == nil {
                         Divider()
                         Button("删除", role: .destructive) {
                             pendingDeleteProvider = profile
@@ -608,23 +577,16 @@ struct RemoteSSHPageView: View {
                 .disabled(isBusy)
             }
 
-            if isCurrent {
-                Button {} label: {
-                    Label("已启用", systemImage: "checkmark.circle.fill")
-                        .frame(minWidth: 72)
-                }
-                .buttonStyle(.bordered)
-                .disabled(true)
-            } else {
-                Button {
-                    pendingRemoteWrite = .enable(profile, host)
-                } label: {
-                    Label("启用", systemImage: "checkmark.circle")
-                        .frame(minWidth: 72)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isBusy)
+            Button {
+                pendingRemoteWrite = .enable(profile, host)
+            } label: {
+                Label(isCurrent ? (providerState.needsSync(profile) ? "同步改动" : "重新应用") : "应用到远程",
+                      systemImage: "arrow.up.doc")
+                    .frame(minWidth: 72)
             }
+            .buttonStyle(.borderedProminent)
+            .disabled(isBusy)
+
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -707,7 +669,20 @@ struct RemoteSSHPageView: View {
                 apiKey: key
             )
         }
-        providerState = RemoteAgentProviderStore.load(hostID: host.id)
+        let local = (try? AgentProviderStore.ensureLocalCPAProfiles(port: gui.port, apiKey: key))
+            ?? AgentProviderStore.loadProfiles()
+        let reachable = try? RemoteAgentConfigurator.resolveCPAReachableHost(
+            sshHost: host, lanIPv4: appState.lanIPv4 ?? localLANIPv4(), allowLan: gui.allowLan
+        )
+        let original = RemoteAgentProviderStore.load(hostID: host.id)
+        providerState = RemoteAgentProviderStore.importingLocalProfiles(
+            local, into: original, hostID: host.id, cpaHost: reachable,
+            cpaPort: gui.port, apiKey: key
+        )
+        if providerState != original {
+            do { try RemoteAgentProviderStore.save(hostID: host.id, state: providerState) }
+            catch { appState.flash(error.localizedDescription, error: true) }
+        }
     }
 
     private func saveHost(_ host: RemoteSSHHost) {
@@ -785,10 +760,7 @@ struct RemoteSSHPageView: View {
         let hostID = host.id
         let hostName = host.name
         let shouldUnify = providerState.unifyCodexSessionHistory
-        let shouldMigrate = profile.agent == .codex
-            && shouldUnify
-            && providerState.migrateCodexSessionsOnUnify
-            && !profile.isDefault
+
 
         Task.detached(priority: .userInitiated) {
             do {
@@ -821,16 +793,7 @@ struct RemoteSSHPageView: View {
                     unifyCodexSessionHistory: shouldUnify
                 )
 
-                var migrateNote = ""
-                if shouldMigrate {
-                    let migrated = try RemoteCodexSessionUnifier.migrateOfficialSessionsToCustom(sshHost: host)
-                    if migrated.jsonlRewritten == 0, migrated.sqliteUpdated == 0 {
-                        migrateNote = "；远程会话无需迁移"
-                    } else {
-                        migrateNote =
-                            "；已迁移远程会话 \(migrated.jsonlRewritten) 文件 / \(migrated.sqliteUpdated) 索引"
-                    }
-                }
+                let migrateNote = ""
 
                 if !next.isDefault {
                     _ = try? RemoteAgentProviderStore.ensureDefaultProfile(hostID: hostID, agent: next.agent)
@@ -844,10 +807,9 @@ struct RemoteSSHPageView: View {
                 let createdDefault = !hadDefaultBefore
                     && !next.isDefault
                     && loaded.profiles.contains { $0.agent == next.agent && $0.isDefault }
-                let suffix = createdDefault ? "（已保存启用前配置为「默认」）" : ""
+                let suffix = createdDefault ? "（已保存启用前配置为「接管前配置」）" : ""
                 let summary = "\(result.message)\(migrateNote)\n→ \(result.remotePath)"
 
-                let applied = next
                 await MainActor.run {
                     self.providerState = loaded
                     self.lastApplySummary = summary
@@ -857,7 +819,6 @@ struct RemoteSSHPageView: View {
                         self.pendingCodexRestart = host
                     }
                 }
-                await self.appState.syncCodexSubscriptionIsolation(for: applied)
             } catch {
                 await MainActor.run {
                     self.isBusy = false
@@ -867,33 +828,14 @@ struct RemoteSSHPageView: View {
         }
     }
 
-    private func setRemoteUnify(_ host: RemoteSSHHost, enabled: Bool) {
-        do {
-            let migrate = enabled ? providerState.migrateCodexSessionsOnUnify : false
-            providerState = try RemoteAgentProviderStore.updateCodexHistorySettings(
-                hostID: host.id,
-                unify: enabled,
-                migrate: migrate
-            )
-            guard enabled else {
-                appState.flash("已关闭远程统一会话历史：远程 live 配置仍写入 custom 桶，仅不再迁移 openai 旧会话")
-                return
-            }
-            pinRemoteCodexSessionBucket(host, thenMigrate: migrate)
-        } catch {
-            appState.flash(error.localizedDescription, error: true)
-        }
-    }
-
     /// Point the remote Codex config at the shared `custom` bucket, then verify.
     ///
     /// Same shape as the local page: only Codex's own default config needs this, because every
     /// Provider we write already lands in `custom`. So this edits `model_provider` in place
     /// rather than re-pushing a whole Provider, and needs no enabled Provider to work.
-    private func pinRemoteCodexSessionBucket(_ host: RemoteSSHHost, thenMigrate: Bool) {
+    private func pinRemoteCodexSessionBucket(_ host: RemoteSSHHost) {
         guard !isBusy else { return }
         isBusy = true
-        let hostID = host.id
         let hostName = host.name
 
         Task.detached(priority: .userInitiated) {
@@ -903,57 +845,23 @@ struct RemoteSSHPageView: View {
                 guard landed == CodexStableProvider.id else {
                     throw AppError(
                         "远程 ~/.codex/config.toml 的 model_provider 是 \(landed ?? "未设置")，指向第三方 provider。"
-                        + "改桶会让它已有的历史对不上，因此未改动；在此主机启用一个 Codex Provider 即可进入共享桶。"
+                        + "改桶会让它已有的历史对不上，因此未改动；在此主机启用一个 Codex 接入配置即可进入共享桶。"
                     )
-                }
-
-                var migrateNote = ""
-                if thenMigrate {
-                    let migrated = try RemoteCodexSessionUnifier.migrateOfficialSessionsToCustom(sshHost: host)
-                    if migrated.jsonlRewritten == 0, migrated.sqliteUpdated == 0 {
-                        migrateNote = "；远程没有需要迁移的 openai 会话"
-                    } else {
-                        migrateNote =
-                            "；已迁移远程会话 \(migrated.jsonlRewritten) 文件 / \(migrated.sqliteUpdated) 索引"
-                    }
                 }
 
                 await MainActor.run {
                     self.isBusy = false
-                    self.lastApplySummary = "远程 model_provider = \(CodexStableProvider.id)\(migrateNote)"
+                    self.lastApplySummary = "远程 model_provider = \(CodexStableProvider.id)"
                     self.appState.flash(
-                        "\(hostName)：已固定远程新会话到 \(CodexStableProvider.id) 桶\(migrateNote)"
+                        "\(hostName)：已固定远程新会话到 \(CodexStableProvider.id) 桶"
                     )
                 }
             } catch {
                 await MainActor.run {
                     self.isBusy = false
-                    // Keep the toggle in sync with what actually happened on the host.
-                    self.providerState = (try? RemoteAgentProviderStore.updateCodexHistorySettings(
-                        hostID: hostID,
-                        unify: false,
-                        migrate: false
-                    )) ?? self.providerState
                     self.appState.flash(error.localizedDescription, error: true)
                 }
             }
-        }
-    }
-
-    private func setRemoteMigrate(_ host: RemoteSSHHost, enabled: Bool) {
-        do {
-            providerState = try RemoteAgentProviderStore.updateCodexHistorySettings(
-                hostID: host.id,
-                unify: providerState.unifyCodexSessionHistory,
-                migrate: enabled
-            )
-            if enabled, providerState.unifyCodexSessionHistory {
-                runRemoteMigrate(host)
-            } else {
-                appState.flash(enabled ? "已勾选迁移已有会话" : "已取消迁移已有会话")
-            }
-        } catch {
-            appState.flash(error.localizedDescription, error: true)
         }
     }
 
@@ -961,8 +869,6 @@ struct RemoteSSHPageView: View {
         guard !isBusy else { return }
         isBusy = true
         let hostName = host.name
-        let hostID = host.id
-        let unify = providerState.unifyCodexSessionHistory
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try RemoteCodexSessionUnifier.migrateOfficialSessionsToCustom(sshHost: host)
@@ -982,12 +888,6 @@ struct RemoteSSHPageView: View {
             } catch {
                 await MainActor.run {
                     self.isBusy = false
-                    // Migration failed, so the checkbox must not keep claiming it is on.
-                    self.providerState = (try? RemoteAgentProviderStore.updateCodexHistorySettings(
-                        hostID: hostID,
-                        unify: unify,
-                        migrate: false
-                    )) ?? self.providerState
                     self.appState.flash(error.localizedDescription, error: true)
                 }
             }
@@ -999,7 +899,7 @@ struct RemoteSSHPageView: View {
     private func deleteRemoteProviderWarning(_ profile: AgentProviderProfile) -> String {
         guard let host = selectedHost else { return "将删除「\(profile.name)」" }
         guard !profile.isDefault else {
-            return "「默认」保存的是接管前 \(host.name) 上的 \(profile.agent.liveConfigPathHint)。"
+            return "「接管前配置」保存的是接管前 \(host.name) 上的 \(profile.agent.liveConfigPathHint)。"
                 + "删除快照后将无法再把该主机还原到那份配置。"
         }
         guard providerState.currentProviderID(for: profile.agent) == profile.id else {
@@ -1007,8 +907,8 @@ struct RemoteSSHPageView: View {
         }
         let hasSnapshot = RemoteAgentDefaultSnapshot.hasSnapshot(hostID: host.id, agent: profile.agent)
         return hasSnapshot
-            ? "「\(profile.name)」正在 \(host.name) 上生效，删除后会通过 SSH 把该主机还原为「默认」快照。"
-            : "「\(profile.name)」正在 \(host.name) 上生效，且没有「默认」快照可还原，"
+            ? "「\(profile.name)」上次应用到 \(host.name)，删除后会通过 SSH 把该主机还原为「接管前配置」快照。"
+            : "「\(profile.name)」上次应用到 \(host.name)，且没有「接管前配置」快照可还原，"
                 + "删除后该主机仍保留它写入的配置。"
     }
 
@@ -1035,7 +935,7 @@ struct RemoteSSHPageView: View {
                 : "将通过 SSH 用「\(profile.name)」覆盖 \(host.name) 的 \(path)。"
                     + "写入前会在远端留一份带时间戳的备份。"
         case let .pushLive(profile, host):
-            return "「\(profile.name)」正在 \(host.name) 上生效，改动会立即覆盖该主机的 "
+            return "「\(profile.name)」上次应用到 \(host.name)，改动会立即覆盖该主机的 "
                 + "\(profile.agent.liveConfigPathHint)。取消则只保存在本机，远程保持原样。"
         case let .unifyHistory(host):
             return "将通过 SSH 把 \(host.name) 的 ~/.codex/config.toml 中 model_provider 改为 custom。"
@@ -1052,9 +952,9 @@ struct RemoteSSHPageView: View {
         case let .pushLive(profile, host):
             pushLiveProvider(profile, host: host)
         case let .unifyHistory(host):
-            setRemoteUnify(host, enabled: true)
+            pinRemoteCodexSessionBucket(host)
         case let .migrateSessions(host):
-            setRemoteMigrate(host, enabled: true)
+            runRemoteMigrate(host)
         }
     }
 
@@ -1103,6 +1003,7 @@ struct RemoteSSHPageView: View {
         let gui = appState.guiConfig.snapshot()
         let lan = appState.lanIPv4 ?? localLANIPv4()
         let apiKey = gui.apiKeys.first?.apiKey ?? ""
+        let unify = providerState.unifyCodexSessionHistory
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try RemoteAgentConfigurator.enable(
@@ -1111,10 +1012,13 @@ struct RemoteSSHPageView: View {
                     cpaPort: gui.port,
                     apiKey: apiKey,
                     lanIPv4: lan,
-                    allowLan: gui.allowLan
+                    allowLan: gui.allowLan,
+                    unifyCodexSessionHistory: unify
                 )
+                let loaded = try RemoteAgentProviderStore.setCurrent(hostID: host.id, agent: profile.agent, providerID: profile.id)
                 let summary = "\(result.message)\n→ \(result.remotePath)"
                 await MainActor.run {
+                    self.providerState = loaded
                     self.lastApplySummary = summary
                     self.isBusy = false
                     self.appState.flash("已保存 \(profile.name)，并同步到远程 \(profile.agent.title)")
@@ -1122,7 +1026,6 @@ struct RemoteSSHPageView: View {
                         self.pendingCodexRestart = host
                     }
                 }
-                await self.appState.syncCodexSubscriptionIsolation(for: profile)
             } catch {
                 await MainActor.run {
                     self.isBusy = false
@@ -1133,51 +1036,38 @@ struct RemoteSSHPageView: View {
     }
 
     private func deleteProvider(_ profile: AgentProviderProfile, host: RemoteSSHHost) {
-        // Deleting the live provider would leave the remote agent pointed at a profile that no
-        // longer exists here, so restore the 「默认」 snapshot over SSH before dropping it.
-        let wasLive = !profile.isDefault
-            && providerState.currentProviderID(for: profile.agent) == profile.id
+        guard !isBusy else { return }
+        let wasLive = !profile.isDefault && providerState.currentProviderID(for: profile.agent) == profile.id
         let hasSnapshot = RemoteAgentDefaultSnapshot.hasSnapshot(hostID: host.id, agent: profile.agent)
-        do {
-            providerState = try RemoteAgentProviderStore.delete(hostID: host.id, id: profile.id)
-        } catch {
-            appState.flash(error.localizedDescription, error: true)
-            return
-        }
-        guard wasLive else {
-            appState.flash("已删除 \(profile.name)")
-            return
-        }
-        guard hasSnapshot, !isBusy else {
-            appState.flash(
-                "已删除 \(profile.name)，但没有可还原的「默认」快照，远程 \(profile.agent.title) 仍是它的配置",
-                error: true
-            )
+        guard wasLive && hasSnapshot else {
+            do {
+                providerState = try RemoteAgentProviderStore.delete(hostID: host.id, id: profile.id)
+                appState.flash("已删除 \(profile.name)" + (wasLive ? "；无快照可还原，远端文件保持原样" : ""), error: wasLive)
+            } catch { appState.flash(error.localizedDescription, error: true) }
             return
         }
         isBusy = true
-        let agent = profile.agent
-        let name = profile.name
         let unify = providerState.unifyCodexSessionHistory
         Task.detached(priority: .userInitiated) {
             do {
                 let result = try RemoteAgentConfigurator.restoreDefault(
-                    agent: agent,
-                    sshHost: host,
-                    unifyCodexSessionHistory: unify
+                    agent: profile.agent, sshHost: host, unifyCodexSessionHistory: unify
+                )
+                _ = try RemoteAgentProviderStore.delete(hostID: host.id, id: profile.id)
+                let loaded = try RemoteAgentProviderStore.setCurrent(
+                    hostID: host.id, agent: profile.agent,
+                    providerID: RemoteAgentProviderStore.defaultID(hostID: host.id, agent: profile.agent)
                 )
                 await MainActor.run {
+                    self.providerState = loaded
                     self.isBusy = false
                     self.lastApplySummary = "\(result.message)\n→ \(result.remotePath)"
-                    self.appState.flash("已删除 \(name)，远程 \(agent.title) 已还原为「默认」")
+                    self.appState.flash("已删除 \(profile.name)，远程配置已还原")
                 }
             } catch {
                 await MainActor.run {
                     self.isBusy = false
-                    self.appState.flash(
-                        "已删除 \(name)，但还原远程「默认」失败：\(error.localizedDescription)",
-                        error: true
-                    )
+                    self.appState.flash("还原或删除未完成：\(error.localizedDescription)", error: true)
                 }
             }
         }

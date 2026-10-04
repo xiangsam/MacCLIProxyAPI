@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Configure model mappings then apply (or restore 「默认」) on a remote SSH host.
+/// Configure model mappings then apply (or restore 「接管前配置」) on a remote SSH host.
 struct RemoteAgentApplySheet: View {
     enum Mode: Identifiable, Equatable {
         case single(AgentKind)
@@ -96,7 +96,7 @@ struct RemoteAgentApplySheet: View {
                     Text(host.displayTarget)
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
-                    Text("写入远端 live 配置，指向本机 CPA。首次应用会拉取远程现有文件存为「默认」，之后可一键还原。")
+                    Text("写入远端 live 配置，指向本机 CPA。首次应用会拉取远程现有文件存为「接管前配置」，之后可一键还原。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -208,14 +208,6 @@ struct RemoteAgentApplySheet: View {
                                 drafts[activeAgent] = draft
                             }
                         ))
-                        Toggle("同名 GPT 模型只走 Codex 订阅", isOn: Binding(
-                            get: { drafts[activeAgent]?.codexSubscriptionOnly ?? false },
-                            set: { value in
-                                var draft = drafts[activeAgent] ?? Draft()
-                                draft.codexSubscriptionOnly = value
-                                drafts[activeAgent] = draft
-                            }
-                        ))
                         if claimsRemoteCompaction, !uncompactableModels.isEmpty {
                             Label(
                                 "这些模型的上游没有 /responses/compact：\(uncompactableModels.joined(separator: "、"))。远程压缩失败不会退回本地压缩。",
@@ -223,15 +215,15 @@ struct RemoteAgentApplySheet: View {
                             )
                             .font(.caption)
                             .foregroundStyle(.orange)
-                        } else if claimsRemoteCompaction, drafts[activeAgent]?.codexSubscriptionOnly != true {
-                            Text("某个 API Provider 当前权重高于 Codex 订阅，同名 GPT 模型会先落到它那边，那边没有压缩端点。建议一并开启上面的隔离开关。")
+                        } else if claimsRemoteCompaction {
+                            Text("请确认服务端支持压缩；CPA 的来源策略在配置页统一管理，优先级不等于来源隔离。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     } header: {
                         Text("远程压缩")
                     } footer: {
-                        Text("远端 Codex 与本机走同一个 CPA。隔离开关改的是本机 CPA 的路由，对所有客户端生效。")
+                        Text("远端 Codex 与本机共用 CPA。来源策略在配置页统一管理，影响所有客户端。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -470,7 +462,6 @@ struct RemoteAgentApplySheet: View {
                     self.appState.flash("\(hostName)：\(result.message)")
                     self.dismiss()
                 }
-                await self.appState.syncCodexSubscriptionIsolation(for: template)
             } catch {
                 await MainActor.run {
                     self.isBusy = false
@@ -512,9 +503,6 @@ struct RemoteAgentApplySheet: View {
                     self.onFinished(summary)
                     self.appState.flash("\(hostName)：已配置 Claude / Codex")
                     self.dismiss()
-                }
-                if let codex = templates[.codex] {
-                    await self.appState.syncCodexSubscriptionIsolation(for: codex)
                 }
             } catch {
                 await MainActor.run {

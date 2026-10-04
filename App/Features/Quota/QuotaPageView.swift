@@ -36,7 +36,7 @@ struct QuotaPageView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("配额")
                     .font(.title3.weight(.semibold))
-                Text("各 Provider 账号额度")
+                Text("OAuth 订阅账号额度")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -63,7 +63,7 @@ struct QuotaPageView: View {
     @ViewBuilder
     private var providerQuotaSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Provider 账号", systemImage: "person.2.fill")
+            Label("订阅账号", systemImage: "person.2.fill")
                 .font(.headline)
 
             if !appState.coreStatus.running {
@@ -79,7 +79,7 @@ struct QuotaPageView: View {
             } else if appState.quotaSnapshot.accounts.isEmpty {
                 GlassCard(padding: 18) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("暂无 Provider 配额数据")
+                        Text("暂无订阅账号配额数据")
                             .font(.subheadline.weight(.semibold))
                         Text("完成 OAuth 后在此查看各账号用量")
                             .font(.caption)

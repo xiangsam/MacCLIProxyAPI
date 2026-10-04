@@ -28,6 +28,9 @@ struct ApiAccessPageView: View {
     var body: some View {
         ListPageScaffold {
             VStack(spacing: 12) {
+                Text("按上游协议选择类型；厂商品牌由接入地址决定。客户端连接 CPA 的地址在首页查看。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 8) {
                     ForEach(ProviderKind.allCases) { item in
                         sectionChip(item)
@@ -68,7 +71,7 @@ struct ApiAccessPageView: View {
                     systemImage: "network",
                     title: "暂无 \(section.title) 配置",
                     message: "添加上游 API 密钥后，可通过本地代理统一调用",
-                    actionTitle: "添加 Provider"
+                    actionTitle: "添加上游 API"
                 ) {
                     beginAdd()
                 }
@@ -83,7 +86,7 @@ struct ApiAccessPageView: View {
                 }
             }
         }
-        .navigationTitle("API 接入")
+        .navigationTitle("上游 API")
         .sheet(isPresented: $showEditor) {
             editorSheet
                 .id(editorSheetIdentity)
@@ -95,9 +98,9 @@ struct ApiAccessPageView: View {
         }
         .confirmDestructive(
             $pendingDelete,
-            title: "删除 Provider？",
+            title: "删除上游 API？",
             confirmLabel: { "删除「\($0.name)」" },
-            message: { _ in "此操作会从内核配置中移除该 Provider，且不能自动撤销。" },
+            message: { _ in "此操作会从内核配置中移除该上游 API，且不能自动撤销。" },
             action: { item in Task { await deleteItem(item) } }
         )
         .task { await reload() }
@@ -170,7 +173,7 @@ struct ApiAccessPageView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("路由优先级")
+                Text("来源内优先级")
                     .font(.subheadline.weight(.medium))
                 HStack(spacing: 10) {
                     Stepper(value: $draftPriority, in: 0...999) {
@@ -178,7 +181,7 @@ struct ApiAccessPageView: View {
                             .font(.body.monospacedDigit())
                             .frame(minWidth: 88, alignment: .leading)
                     }
-                    Text("数字越大，fill-first 越优先；订阅与本地同名模型时靠此指定。")
+                    Text("仅对来源策略允许参与的凭据有效，数字越大越优先。优先级不会重新启用被排除的来源；同级凭据再按路由算法选择。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -362,7 +365,7 @@ struct ApiAccessPageView: View {
 
                 Spacer(minLength: 8)
 
-                Text(item.disabled ? "已禁用" : "启用")
+                Text(item.disabled ? "已停用" : "允许路由")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(item.disabled ? Color.secondary : Color.green)
 
@@ -398,7 +401,7 @@ struct ApiAccessPageView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
 
-                Button(item.disabled ? "启用" : "禁用") {
+                Button(item.disabled ? "允许参与路由" : "停止参与路由") {
                     Task { await toggleDisabled(item, disabled: !item.disabled) }
                 }
                 .buttonStyle(.bordered)
@@ -499,7 +502,7 @@ struct ApiAccessPageView: View {
                        (($0["name"] as? String) ?? "").caseInsensitiveCompare(name) == .orderedSame
                    })
                 {
-                    throw AppError("Provider 名称已存在")
+                    throw AppError("上游 API 名称已存在")
                 }
                 var entry: [String: Any] = ["disabled": false]
                 ProviderConfig.applyAPIKey(to: &entry, apiKey: resolvedKey)
@@ -514,11 +517,11 @@ struct ApiAccessPageView: View {
                 list.append(entry)
             } else {
                 guard let editing = editingItem else {
-                    throw AppError("找不到要编辑的 Provider，请刷新后重试")
+                    throw AppError("找不到要编辑的上游 API，请刷新后重试")
                 }
                 // Match by auth-index / name rather than filtered listIndex alone.
                 guard let idx = resolveListIndex(of: editing, in: list) else {
-                    throw AppError("找不到要编辑的 Provider，请刷新后重试")
+                    throw AppError("找不到要编辑的上游 API，请刷新后重试")
                 }
                 var entry = list[idx]
                 if section.requiresName {
@@ -530,7 +533,7 @@ struct ApiAccessPageView: View {
                                .caseInsensitiveCompare(newName) == .orderedSame
                        })
                     {
-                        throw AppError("Provider 名称已存在")
+                        throw AppError("上游 API 名称已存在")
                     }
                     entry["name"] = newName
                 }
@@ -645,7 +648,7 @@ struct ApiAccessPageView: View {
                     }
                 }
             } else {
-                throw AppError("无法识别 Provider，已取消删除")
+                throw AppError("无法识别上游 API，已取消删除")
             }
             ProviderSecretStore.remove(
                 section: section,
@@ -667,7 +670,7 @@ struct ApiAccessPageView: View {
             let existingJSON = try await client.getJSON(path: path)
             var list = rawProviderRows(existingJSON, section: section)
             guard let idx = resolveListIndex(of: item, in: list) else {
-                throw AppError("Provider 索引无效，请刷新后重试")
+                throw AppError("上游 API 索引无效，请刷新后重试")
             }
             list[idx]["disabled"] = disabled
             list = injectCachedSecrets(into: list, section: section)
@@ -754,7 +757,7 @@ struct ApiAccessPageView: View {
             var list = rawProviderRows(existingJSON, section: section)
             list = injectCachedSecrets(into: list, section: section)
             guard let idx = resolveListIndex(of: item, in: list) else {
-                throw AppError("找不到 Provider，请刷新后重试")
+                throw AppError("找不到上游 API，请刷新后重试")
             }
             var entry = list[idx]
             entry["models"] = rows
@@ -818,7 +821,7 @@ struct ApiAccessPageView: View {
             var list = rawProviderRows(existingJSON, section: storage)
             list = injectCachedSecrets(into: list, section: storage)
             guard let idx = resolveListIndex(of: item, in: list) else {
-                throw AppError("找不到 Provider，请刷新后重试")
+                throw AppError("找不到上游 API，请刷新后重试")
             }
             var entry = list[idx]
             entry["models"] = rows
@@ -925,7 +928,7 @@ struct ApiAccessPageView: View {
 
     /// Before full-list PUT, re-inject secrets that GET omitted (legacy + api-key-entries).
     private func injectCachedSecrets(into list: [[String: Any]], section: ProviderKind) -> [[String: Any]] {
-        ProviderSecretStore.reinject(into: list, section: section)
+        appState.applyingSourcePolicy(to: ProviderSecretStore.reinject(into: list, section: section), section: section)
     }
 
     private func maskKey(_ key: String) -> String {

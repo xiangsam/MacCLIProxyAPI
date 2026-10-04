@@ -58,7 +58,7 @@ final class AgentLiveConfigWriterTests: XCTestCase {
         let def = AgentProviderProfile.makeDefault(agent: .codex, endpoint: "", apiKey: "", model: "")
         XCTAssertTrue(def.isDefault)
         XCTAssertEqual(def.id, "default-codex")
-        XCTAssertEqual(def.name, "默认")
+        XCTAssertEqual(def.name, "接管前配置")
 
         let off = AgentProviderProfile.official(agent: .codex)
         XCTAssertTrue(off.isOfficial)

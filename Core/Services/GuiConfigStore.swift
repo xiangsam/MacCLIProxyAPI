@@ -17,7 +17,12 @@ struct GuiConfigFile: Equatable, Sendable {
     var routingSessionAffinity: Bool = false
     var routingSessionAffinityTtl: String = ""
     /// When true, overlapping GPT ids are excluded from Codex OAuth so fill-first priority can stick to API providers.
-    var routingExcludeCodexOverlappingModels: Bool = false
+    var overlappingModelPolicy: OverlappingModelPolicy = .automatic
+    // Read compatibility for configurations saved before the mutually exclusive policy.
+    var routingExcludeCodexOverlappingModels: Bool {
+        get { overlappingModelPolicy == .apiOnly }
+        set { overlappingModelPolicy = newValue ? .apiOnly : .automatic }
+    }
     /// CPA `codex.optimize-multi-agent-v2`. Default on: plaintext agent `encrypted_content` → `input_text`.
     var optimizeCodexMultiAgentV2: Bool = true
     var theme: String = AppThemePreference.system.rawValue
@@ -143,6 +148,12 @@ final class GuiConfigStore {
             return nil
         }
         var config = parseTOML(text)
+        if url == AppPaths.guiConfigURL, !text.contains("overlapping-model-policy"),
+           let yaml = try? String(contentsOf: AppPaths.coreConfigURL, encoding: .utf8) {
+            config.overlappingModelPolicy = CoreConfigStore.legacyOverlappingModelPolicy(
+                yaml: yaml, apiOnly: config.routingExcludeCodexOverlappingModels
+            )
+        }
         // JSON sidecar is the durable source of truth for keys when present.
         if let keys = loadAPIKeys(from: apiKeysURL) {
             config.apiKeys = keys
@@ -320,6 +331,8 @@ final class GuiConfigStore {
             config.routingSessionAffinityTtl = value
         case "routing-exclude-codex-overlapping-models", "routing_exclude_codex_overlapping_models":
             config.routingExcludeCodexOverlappingModels = parseBool(rawValue)
+        case "overlapping-model-policy":
+            config.overlappingModelPolicy = OverlappingModelPolicy(rawValue: value) ?? .automatic
         case "optimize-codex-multi-agent-v2", "optimize_codex_multi_agent_v2":
             config.optimizeCodexMultiAgentV2 = parseBool(rawValue)
         case "theme":
@@ -346,7 +359,7 @@ final class GuiConfigStore {
             "proxy-url = \(quote(config.proxyUrl))",
             "routing-session-affinity = \(config.routingSessionAffinity)",
             "routing-session-affinity-ttl = \(quote(config.routingSessionAffinityTtl))",
-            "routing-exclude-codex-overlapping-models = \(config.routingExcludeCodexOverlappingModels)",
+            "overlapping-model-policy = \(quote(config.overlappingModelPolicy.rawValue))",
             "optimize-codex-multi-agent-v2 = \(config.optimizeCodexMultiAgentV2)",
             "theme = \(quote(config.theme))",
             "codex-session-repair-on-launch = \(config.codexSessionRepairOnLaunch)",

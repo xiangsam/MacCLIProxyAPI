@@ -116,15 +116,15 @@ struct AuthFilesPageView: View {
                                 .foregroundStyle((file.priority ?? 0) > 0 ? Color.accentColor : Color.secondary)
                         }
                         .menuStyle(.borderlessButton)
-                        .help("fill-first 时数字越大越优先；用于同名模型指定订阅或其他上游优先级")
+                        .help("只在全局来源策略允许的凭据中比较；数字越大越优先，同级再按路由算法选择。不会覆盖来源排除规则。")
                         StatusPill(
-                            text: file.disabled ? "已禁用" : "启用中",
+                            text: file.disabled ? "已停用" : "允许使用",
                             tone: file.disabled ? .warning : .success
                         )
                     }
                 }
                 Spacer(minLength: 8)
-                Button(file.disabled ? "启用" : "禁用") {
+                Button(file.disabled ? "允许使用凭证" : "停用凭证") {
                     Task { await setDisabled(name: file.name, disabled: !file.disabled) }
                 }
                 .buttonStyle(.bordered)

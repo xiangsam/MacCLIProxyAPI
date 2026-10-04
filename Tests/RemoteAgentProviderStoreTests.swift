@@ -70,4 +70,49 @@ final class RemoteAgentProviderStoreTests: XCTestCase {
         RemoteAgentProviderStore.deleteHostData(hostID: hostID)
         XCTAssertTrue(RemoteAgentProviderStore.load(hostID: hostID).profiles.isEmpty)
     }
+    func testLocalSyncPreservesSourceAndTracksPendingChanges() throws {
+        var local = AgentProviderProfile.localCPA(agent: .codex, port: 8317, apiKey: "k", model: "gpt-5.6-sol")
+        var state = RemoteAgentProviderStore.importingLocalProfiles(
+            [local], into: .empty, hostID: hostID, cpaHost: "192.168.1.10", cpaPort: 8317, apiKey: "k"
+        )
+        let remote = try XCTUnwrap(state.profiles.first)
+        XCTAssertEqual(remote.endpoint, "http://192.168.1.10:8317/v1")
+        XCTAssertEqual(state.sourceProfileIDs[remote.id], local.id)
+        XCTAssertTrue(state.needsSync(remote))
+        try RemoteAgentProviderStore.save(hostID: hostID, state: state)
+        state = try RemoteAgentProviderStore.setCurrent(hostID: hostID, agent: .codex, providerID: remote.id)
+        XCTAssertFalse(state.needsSync(remote))
+        local.model = "gpt-5.5"
+        state = RemoteAgentProviderStore.importingLocalProfiles(
+            [local], into: state, hostID: hostID, cpaHost: "192.168.1.10", cpaPort: 8317, apiKey: "k"
+        )
+        let changed = try XCTUnwrap(state.profiles.first)
+        XCTAssertTrue(state.needsSync(changed))
+        XCTAssertEqual(state.appliedProfiles["codex"]?.model, "gpt-5.6-sol")
+        XCTAssertEqual(state.currentProviderID(for: .codex), remote.id)
+        try RemoteAgentProviderStore.save(hostID: hostID, state: state)
+        XCTAssertTrue(RemoteAgentProviderStore.load(hostID: hostID).needsSync(changed))
+    }
+
+    func testDirectLocalSourceKeepsEndpointAndSnapshotIsNotShared() throws {
+        var local = AgentProviderProfile.localCPA(agent: .codex, port: 8317, apiKey: "upstream-key")
+        local.id = "direct"
+        local.isLocalCPA = false
+        local.endpoint = "https://example.com/v1"
+        let state = RemoteAgentProviderStore.importingLocalProfiles(
+            [local, .makeDefault(agent: .codex)], into: .empty,
+            hostID: hostID, cpaHost: nil, cpaPort: 8317, apiKey: "cpa-key"
+        )
+        XCTAssertEqual(state.profiles.count, 1)
+        XCTAssertEqual(state.profiles.first?.endpoint, local.endpoint)
+        XCTAssertEqual(state.profiles.first?.apiKey, "upstream-key")
+    }
+
+    func testLegacyRemoteStateDoesNotClaimVerifiedWrite() throws {
+        let data = Data(#"{"profiles":[],"currentProviderIDs":{"codex":"old"}}"#.utf8)
+        let state = try JSONDecoder().decode(RemoteAgentProviderStore.State.self, from: data)
+        XCTAssertTrue(state.appliedProfiles.isEmpty)
+        XCTAssertTrue(state.needsSync(.official(agent: .codex)))
+    }
+
 }

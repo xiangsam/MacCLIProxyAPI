@@ -95,6 +95,10 @@ enum AgentProviderStore {
     static func ensureLocalCPAProfiles(port: UInt16, apiKey: String) throws -> [AgentProviderProfile] {
         var profiles = loadProfiles()
         var changed = false
+        for index in profiles.indices where profiles[index].isDefault && profiles[index].name == "默认" {
+            profiles[index].name = "接管前配置"
+            changed = true
+        }
         for agent in AgentKind.allCases {
             // 1. Official Profile
             let off = AgentProviderProfile.official(agent: agent)

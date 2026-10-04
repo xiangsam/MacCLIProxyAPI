@@ -22,12 +22,12 @@ enum AppPage: String, CaseIterable, Identifiable, Hashable {
         case .versions: return "版本"
         case .config: return "配置"
         case .thinkingAliases: return "模型别名"
-        case .oauth: return "OAuth"
-        case .api: return "API 接入"
+        case .oauth: return "订阅授权"
+        case .api: return "上游 API"
         case .authFiles: return "认证文件"
         case .quota: return "配额"
         case .usageRecords: return "使用记录"
-        case .agents: return "智能体"
+        case .agents: return "客户端接入"
         case .remoteSSH: return "远程 SSH"
         case .diagnostics: return "诊断"
         }
@@ -133,6 +133,24 @@ struct GuiSettings: Equatable, Sendable {
     var port: UInt16
     var allowLan: Bool
     var runOnStartup: Bool
+}
+
+enum OverlappingModelPolicy: String, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case subscriptionOnly = "subscription-only"
+    case apiOnly = "api-only"
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .automatic: return "正常路由（订阅与 API 均可参与）"
+        case .subscriptionOnly: return "仅 Codex 订阅"
+        case .apiOnly: return "仅上游 API"
+        }
+    }
+    var explanation: String {
+        "作用于本机 CPA 的已知同名 GPT 模型，影响所有本机和远程客户端。策略决定哪些来源参与；优先级和路由算法只在允许参与的来源中选择。仅选一种来源时，不会回退到被排除的来源。"
+    }
 }
 
 struct CoreConfigSettings: Equatable, Sendable {

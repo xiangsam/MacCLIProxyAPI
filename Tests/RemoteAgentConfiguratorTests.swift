@@ -166,6 +166,7 @@ final class RemoteAgentConfiguratorTests: XCTestCase {
         live.endpoint = "http://127.0.0.1:28317/v1"
         live.apiKey = "same-key"
         live.model = "gpt-5.6-terra"
+        live.catalogModels = ["gpt-5.6-terra"]
 
         XCTAssertEqual(
             AgentLiveConfigReader.matchProfileID(live: live, agent: .codex, in: profiles, preferring: "sub"),
@@ -479,4 +480,57 @@ final class RemoteAgentConfiguratorTests: XCTestCase {
         XCTAssertTrue(url.path.hasSuffix("defaults/host-1/codex"))
         XCTAssertFalse(RemoteAgentDefaultSnapshot.hasSnapshot(hostID: "missing-\(UUID().uuidString)", agent: .codex))
     }
+    func testSourcePolicyIsExclusiveAndPreservesOtherExclusions() {
+        var root: [String: Any] = [
+            "codex-api-key": [["models": [["name": "gpt-5.6-sol"]], "excluded-models": ["private-model"]]],
+            "oauth-excluded-models": ["codex": ["manual-model"], "claude": ["keep-me"]]
+        ]
+        for policy in [OverlappingModelPolicy.apiOnly, .subscriptionOnly, .automatic, .subscriptionOnly, .apiOnly] {
+            CoreConfigStore.applyOverlappingModelPolicy(policy, to: &root)
+            let oauth = root["oauth-excluded-models"] as? [String: [String]] ?? [:]
+            let api = (root["codex-api-key"] as? [[String: Any]])?.first?["excluded-models"] as? [String] ?? []
+            XCTAssertEqual(oauth["codex"]?.contains("gpt-5.6*") ?? false, policy == .apiOnly)
+            XCTAssertEqual(api.contains("gpt-5.6*"), policy == .subscriptionOnly)
+            XCTAssertTrue(api.contains("private-model"))
+            XCTAssertTrue(oauth["codex"]?.contains("manual-model") ?? false)
+            XCTAssertEqual(oauth["claude"], ["keep-me"])
+        }
+    }
+
+    func testSourcePolicyCoversNewModelRowsWithoutChangingPriority() {
+        var root: [String: Any] = ["openai-compatibility": [[
+            "priority": 99, "models": [["name": "gpt-5.6-sol"]]
+        ]]]
+        CoreConfigStore.applyOverlappingModelPolicy(.subscriptionOnly, to: &root)
+        let row = (root["openai-compatibility"] as? [[String: Any]])?.first
+        XCTAssertEqual(row?["priority"] as? Int, 99)
+        XCTAssertEqual(row?["excluded-models"] as? [String], ["gpt-5.6*"])
+    }
+
+    func testMatchingRejectsMissingConfigAndChangedCredentialsOrModels() {
+        let profile = codexProfile(id: "local", name: "CPA", model: "gpt-5.6-sol", isLocalCPA: true)
+        let profiles = [profile, AgentProviderProfile.official(agent: .codex)]
+        XCTAssertNil(AgentLiveConfigReader.matchProfileID(live: .init(), agent: .codex, in: profiles))
+        var live = AgentLiveConfigReader.Snapshot(configExists: true)
+        live.endpoint = profile.endpoint
+        live.apiKey = "changed-key"
+        live.model = profile.model
+        live.catalogModels = profile.resolvedCodexCatalogModels
+        XCTAssertNil(AgentLiveConfigReader.matchProfileID(live: live, agent: .codex, in: profiles, preferring: profile.id))
+        live.apiKey = profile.apiKey
+        XCTAssertEqual(AgentLiveConfigReader.matchProfileID(live: live, agent: .codex, in: profiles), profile.id)
+        live.model = "different-model"
+        XCTAssertNil(AgentLiveConfigReader.matchProfileID(live: live, agent: .codex, in: profiles, preferring: profile.id))
+        live.endpoint = nil
+        live.providerID = "unknown-provider"
+        XCTAssertNil(AgentLiveConfigReader.matchProfileID(live: live, agent: .codex, in: profiles))
+    }
+
+    func testLegacySourcePolicyConflictHasSingleWinner() {
+        let yaml = "codex-api-key:\n  - excluded-models: [gpt-5.6*]\n"
+        XCTAssertEqual(CoreConfigStore.legacyOverlappingModelPolicy(yaml: yaml, apiOnly: false), .subscriptionOnly)
+        XCTAssertEqual(CoreConfigStore.legacyOverlappingModelPolicy(yaml: yaml, apiOnly: true), .apiOnly)
+        XCTAssertEqual(CoreConfigStore.legacyOverlappingModelPolicy(yaml: "{}", apiOnly: false), .automatic)
+    }
+
 }

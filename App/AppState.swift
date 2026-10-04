@@ -95,6 +95,8 @@ final class AppState {
             self.selectedPage = page
         }
 
+        guard !AppPaths.isRunningTests else { return }
+
         // Lightweight launch: avoid blocking main with process scans until UI is up.
         // Durable keys → core yaml on every launch (repairs wiped api-keys: []).
         let fresh = guiConfig.snapshotFresh()
@@ -835,7 +837,7 @@ final class AppState {
         proxyUrl: String,
         sessionAffinity: Bool,
         sessionTTL: String,
-        excludeCodexOverlappingModels: Bool,
+        overlappingModelPolicy: OverlappingModelPolicy,
         optimizeCodexMultiAgentV2: Bool
     ) {
         do {
@@ -845,7 +847,7 @@ final class AppState {
                 $0.proxyUrl = proxyUrl
                 $0.routingSessionAffinity = sessionAffinity
                 $0.routingSessionAffinityTtl = normalizedTTL
-                $0.routingExcludeCodexOverlappingModels = excludeCodexOverlappingModels
+                $0.overlappingModelPolicy = overlappingModelPolicy
                 $0.optimizeCodexMultiAgentV2 = optimizeCodexMultiAgentV2
             }
             try CoreConfigStore.patchNetworkAndRouting(gui: updated)
@@ -870,34 +872,10 @@ final class AppState {
         ManagementClient(gui: guiConfig.snapshot())
     }
 
-    /// Converge the core's per-credential exclusions onto a newly live Codex profile.
-    ///
-    /// Shared by the local Agents page and Remote SSH: a remote agent reaches this same core over
-    /// the LAN, so its 「只走 Codex 订阅」 switch has to move the very same routing.
-    func syncCodexSubscriptionIsolation(for profile: AgentProviderProfile) async {
-        let globalExclusion = guiConfig.snapshot().routingExcludeCodexOverlappingModels
-        do {
-            let outcome = try await CodexSubscriptionIsolation.sync(
-                for: profile,
-                globalExclusionEnabled: globalExclusion,
-                client: managementClient()
-            )
-            switch outcome {
-            case .unchanged:
-                break
-            case .applied:
-                flash("同名 GPT 模型已隔离到 Codex 订阅（其他 Provider 暂不参与路由）")
-            case .reverted:
-                flash("已恢复同名 GPT 模型的正常路由")
-            case .conflictsWithGlobalExclusion:
-                flash(
-                    "配置页的「GPT 同名模型完全不走 Codex 订阅」仍开着，两边会把同名模型同时排除，请关掉那个开关。",
-                    error: true
-                )
-            }
-        } catch {
-            flash("同名模型隔离未生效：\(error.localizedDescription)", error: true)
-        }
+    func applyingSourcePolicy(to rows: [[String: Any]], section: ProviderKind) -> [[String: Any]] {
+        var root: [String: Any] = [section.rawValue: rows]
+        CoreConfigStore.applyOverlappingModelPolicy(guiConfig.snapshot().overlappingModelPolicy, to: &root)
+        return root[section.rawValue] as? [[String: Any]] ?? rows
     }
 
     func firstAPIKey() -> String {

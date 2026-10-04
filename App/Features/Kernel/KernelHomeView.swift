@@ -438,8 +438,8 @@ struct KernelHomeView: View {
                 ],
                 spacing: 12
             ) {
-                shortcutCard("OAuth", "完成提供商授权", "person.badge.key.fill", .oauth, .blue)
-                shortcutCard("API 接入", "上游密钥与兼容", "network", .api, .indigo)
+                shortcutCard("订阅授权", "添加订阅账号", "person.badge.key.fill", .oauth, .blue)
+                shortcutCard("上游 API", "上游密钥与兼容", "network", .api, .indigo)
                 shortcutCard("配额", "账号用量额度", "gauge.with.dots.needle.33percent", .quota, .green)
                 shortcutCard("使用记录", "请求与费用分析", "chart.bar.fill", .usageRecords, .orange)
             }

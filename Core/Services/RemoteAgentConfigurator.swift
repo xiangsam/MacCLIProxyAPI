@@ -48,7 +48,7 @@ enum RemoteAgentConfigurator {
         var profile = AgentProviderProfile.localCPA(agent: agent, port: cpaPort, apiKey: apiKey)
         profile.endpoint = endpoint
         profile.apiKey = apiKey
-        profile.name = "本机 CPA（远程）"
+        profile.name = "通过此 Mac 的 CPA"
         // Remote write must not re-resolve localhost on the Mac filesystem.
         profile.isLocalCPA = false
         if let template {
@@ -97,7 +97,7 @@ enum RemoteAgentConfigurator {
 
         let capture = try RemoteAgentDefaultSnapshot.captureIfNeeded(sshHost: sshHost, agent: agent)
         let suffix = capture.captured
-            ? (capture.files.isEmpty ? "（已建立空「默认」快照）" : "（已保存启用前配置为「默认」）")
+            ? (capture.files.isEmpty ? "（已建立空「接管前配置」快照）" : "（已保存启用前配置为「接管前配置」）")
             : ""
 
         switch agent {
@@ -119,7 +119,7 @@ enum RemoteAgentConfigurator {
     ///
     /// `unifyCodexSessionHistory` re-pins the shared bucket afterwards: a snapshot captured
     /// before we ever touched the host names no provider, so Codex would fall back to its
-    /// built-in `openai` bucket and sessions started from 「默认」 would leave the unified
+    /// built-in `openai` bucket and sessions started from 「接管前配置」 would leave the unified
     /// history the user asked for.
     static func restoreDefault(
         agent: AgentKind,
@@ -147,13 +147,13 @@ enum RemoteAgentConfigurator {
         return RemoteAgentApplyResult(
             agent: agent,
             remotePath: path,
-            message: "已恢复远程「默认」配置\(suffix)\(reloadHint)",
+            message: "已恢复远程「接管前配置」配置\(suffix)\(reloadHint)",
             codexAppServerHoldsStaleCatalog: staleDaemon
         )
     }
 
     /// Enable a remote provider (list → enable), matching local Agents UX.
-    /// 「默认」restores the first-capture snapshot; others write live config after capture-if-needed.
+    /// 「接管前配置」restores the first-capture snapshot; others write live config after capture-if-needed.
     static func enable(
         profile: AgentProviderProfile,
         sshHost: RemoteSSHHost,
@@ -196,7 +196,7 @@ enum RemoteAgentConfigurator {
 
         let capture = try RemoteAgentDefaultSnapshot.captureIfNeeded(sshHost: sshHost, agent: agent)
         let suffix = capture.captured
-            ? (capture.files.isEmpty ? "（已建立空「默认」快照）" : "（已保存启用前配置为「默认」）")
+            ? (capture.files.isEmpty ? "（已建立空「接管前配置」快照）" : "（已保存启用前配置为「接管前配置」）")
             : ""
 
         switch agent {

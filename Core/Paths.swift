@@ -26,8 +26,16 @@ enum AppPaths {
     static let agentSettingsFile = "settings.json"
     static let agentBackupsDirName = "backups"
 
+    static var isRunningTests: Bool {
+        NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    private static let testHome = FileManager.default.temporaryDirectory
+        .appendingPathComponent("MacCLIProxyAPI-test-home-\(UUID().uuidString)", isDirectory: true)
+
     static var homeDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        isRunningTests ? testHome : FileManager.default.homeDirectoryForCurrentUser
     }
 
     static var baseDirectory: URL {

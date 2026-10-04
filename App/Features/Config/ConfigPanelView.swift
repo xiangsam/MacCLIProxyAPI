@@ -12,7 +12,7 @@ struct ConfigPanelView: View {
     @State private var proxyUrl = ""
     @State private var sessionAffinity = false
     @State private var sessionTTL = ""
-    @State private var excludeCodexOverlappingModels = false
+    @State private var overlappingModelPolicy: OverlappingModelPolicy = .automatic
     @State private var optimizeCodexMultiAgentV2 = true
     @State private var showAddKey = false
     @State private var newKeyValue = ""
@@ -406,7 +406,24 @@ struct ConfigPanelView: View {
             VStack(alignment: .leading, spacing: 16) {
                 GlassCard(padding: 20) {
                     VStack(alignment: .leading, spacing: 16) {
-                        Label("路由策略", systemImage: "arrow.triangle.branch")
+                        Label("同名模型 · 来源范围", systemImage: "arrow.triangle.branch")
+                            .font(.title3.weight(.semibold))
+
+                        Picker("同名 GPT 来源策略", selection: $overlappingModelPolicy) {
+                            ForEach(OverlappingModelPolicy.allCases) { policy in
+                                Text(policy.title).tag(policy)
+                            }
+                        }
+                        Text(overlappingModelPolicy.explanation)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                    }
+                }
+
+                GlassCard(padding: 20) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Label("允许来源内的调度方式", systemImage: "arrow.triangle.branch")
                             .font(.title3.weight(.semibold))
 
                         HStack(spacing: 12) {
@@ -414,7 +431,7 @@ struct ConfigPanelView: View {
                                 id: "round-robin",
                                 title: "轮询",
                                 subtitle: "round-robin",
-                                detail: "在可用账号间均匀分配请求",
+                                detail: "在允许参与的同级账号间轮询",
                                 icon: "arrow.triangle.2.circlepath"
                             )
                             strategyCard(
@@ -451,7 +468,7 @@ struct ConfigPanelView: View {
                         Toggle(isOn: $sessionAffinity) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("会话亲和")
-                                Text("同一会话尽量落到同一上游账号；开启后会覆盖 fill-first 优先级")
+                                Text("在来源策略允许的范围内，同一会话尽量复用上游账号；亲和策略可能使请求不按优先级重新选择。")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -472,23 +489,6 @@ struct ConfigPanelView: View {
                             }
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
-                    }
-                }
-
-                GlassCard(padding: 20) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Label("同名模型", systemImage: "arrow.triangle.branch")
-                            .font(.title3.weight(.semibold))
-
-                        Toggle(isOn: $excludeCodexOverlappingModels) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("GPT 同名模型完全不走 Codex 订阅")
-                                Text("默认关闭：同名 GPT 的 API Provider 优先级更高时会优先命中它，失败才掉落订阅。开启后写入 oauth-excluded-models，该 Provider 不可用时直接 503。")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .toggleStyle(.switch)
                     }
                 }
 
@@ -515,7 +515,7 @@ struct ConfigPanelView: View {
                         proxyUrl: proxyUrl,
                         sessionAffinity: sessionAffinity,
                         sessionTTL: sessionTTL,
-                        excludeCodexOverlappingModels: excludeCodexOverlappingModels,
+                        overlappingModelPolicy: overlappingModelPolicy,
                         optimizeCodexMultiAgentV2: optimizeCodexMultiAgentV2
                     )
                 } label: {
@@ -598,7 +598,7 @@ struct ConfigPanelView: View {
         proxyUrl = settings.proxyUrl
         sessionAffinity = settings.routingSessionAffinity
         sessionTTL = settings.routingSessionAffinityTtl
-        excludeCodexOverlappingModels = settings.routingExcludeCodexOverlappingModels
+        overlappingModelPolicy = appState.guiConfig.snapshot().overlappingModelPolicy
         optimizeCodexMultiAgentV2 = settings.optimizeCodexMultiAgentV2
     }
 

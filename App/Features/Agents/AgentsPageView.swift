@@ -11,7 +11,7 @@ struct AgentsPageView: View {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .providers: return "Provider"
+            case .providers: return "接入配置"
             case .sessions: return "会话"
             }
         }
@@ -53,7 +53,7 @@ struct AgentsPageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle("智能体")
+        .navigationTitle("客户端接入")
         .onAppear(perform: reloadAll)
         .sheet(item: $editorTarget) { target in
             AgentProviderEditorSheet(
@@ -96,15 +96,15 @@ struct AgentsPageView: View {
     private func deleteProfileWarning(_ profile: AgentProviderProfile) -> String {
         let livePath = profile.agent.liveConfigPathHint
         guard !profile.isDefault else {
-            return "「默认」保存的是启用本应用前的 \(livePath)。删除快照后将无法再还原到那份配置。"
+            return "「接管前配置」保存的是启用本应用前的 \(livePath)。删除快照后将无法再还原到那份配置。"
         }
         guard settings.currentProviderID(for: profile.agent) == profile.id else {
             return "仅删除应用内保存的这套接入配置，不改动 \(livePath)。"
         }
         let hasSnapshot = profiles.contains { $0.agent == profile.agent && $0.isDefault }
         return hasSnapshot
-            ? "「\(profile.name)」正在生效，删除后 \(livePath) 会还原为「默认」快照。"
-            : "「\(profile.name)」正在生效，且没有「默认」快照可还原，删除后 \(livePath) 仍保留它写入的配置。"
+            ? "「\(profile.name)」正在生效，删除后 \(livePath) 会还原为「接管前配置」快照。"
+            : "「\(profile.name)」正在生效，且没有「接管前配置」快照可还原，删除后 \(livePath) 仍保留它写入的配置。"
     }
 
     // MARK: - Header
@@ -112,9 +112,9 @@ struct AgentsPageView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("智能体")
+                Text("客户端接入")
                     .font(.title3.weight(.semibold))
-                Text("切换本地 Provider，管理编码会话")
+                Text("切换本地接入配置，管理编码会话")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -132,7 +132,7 @@ struct AgentsPageView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .disabled(isBusy)
-            .help("刷新 Provider 与会话")
+            .help("刷新接入配置与会话")
         }
         .frame(maxWidth: AppDesign.contentMaxWidth)
         .frame(maxWidth: .infinity)
@@ -191,7 +191,7 @@ struct AgentsPageView: View {
             return "未检测到 \(selectedAgent.liveConfigPathHint)"
         }
         guard let endpoint = live.endpoint, !endpoint.isEmpty else {
-            return "已检测到 \(selectedAgent.liveConfigPathHint) · 尚未设置自定义 Provider"
+            return "已检测到 \(selectedAgent.liveConfigPathHint) · 尚未设置自定义接入配置"
         }
         let modelPart = (live.model?.isEmpty == false) ? " · 模型 \(live.model!)" : ""
         return "live：\(endpoint)\(modelPart)"
@@ -209,7 +209,7 @@ struct AgentsPageView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("Provider")
+                        Text("接入配置")
                             .font(.headline)
                         Text("\(filteredProfiles.count)")
                             .font(.caption.monospacedDigit())
@@ -226,7 +226,7 @@ struct AgentsPageView: View {
                         GlassCard {
                             CenteredEmptyState(
                                 systemImage: "server.rack",
-                                title: "暂无 Provider",
+                                title: "暂无接入配置",
                                 message: "点击右上角添加，或刷新以加载本机 CPA"
                             )
                             .frame(minHeight: 180)
@@ -285,7 +285,7 @@ struct AgentsPageView: View {
                         Button {
                             editorTarget = .new(agent: selectedAgent)
                         } label: {
-                            Label("添加 Provider", systemImage: "plus")
+                            Label("添加接入配置", systemImage: "plus")
                         }
                     } label: {
                         Label("更多", systemImage: "ellipsis.circle")
@@ -306,9 +306,9 @@ struct AgentsPageView: View {
             let current = codexLiveBucket ?? "未设置"
             guard AgentLiveConfigWriter.canRepinOfficialCodexBucket() else {
                 return "未生效：model_provider = \(current)，指向第三方 provider。改桶会让它已有的历史对不上，"
-                    + "启用一个 Codex Provider 即可进入共享桶。"
+                    + "启用一个 Codex 接入配置即可进入共享桶。"
             }
-            return "未生效：model_provider = \(current)。重新拨一次开关即可写入。"
+            return "当前会话库：\(current)。可点击下方按钮改用共享库。"
         }()
         HStack(spacing: 6) {
             Circle()
@@ -325,66 +325,40 @@ struct AgentsPageView: View {
     private var codexSettingsCard: some View {
         GlassCard(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("统一会话历史")
-                            .font(.headline)
-                        Text("把 ~/.codex/config.toml 的 model_provider 固定为 custom，新会话都进同一桶。本应用写入的 Provider 本来就在 custom 桶，这个开关针对的是 Codex 自带的默认配置（含「默认」Provider）——它原本写进 openai 桶。关闭只停止迁移，不会改回 openai。「迁移已有」会把 openai 旧会话改标签并入同一桶，迁移前备份，Codex 运行中拒绝执行。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { settings.unifyCodexSessionHistory },
-                        set: { setUnify($0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .help("写入 ~/.codex/config.toml：model_provider = \(CodexStableProvider.id)")
-                }
+                Text("会话历史").font(.headline)
+                Toggle("下次应用官方接入时也使用共享会话库", isOn: Binding(
+                    get: { settings.unifyCodexSessionHistory },
+                    set: { setUnify($0) }
+                ))
+                Text("此策略在应用接入配置时生效，不会立即修改当前配置或旧会话。自定义接入始终使用 custom 会话库；官方接入可选择共享或官方 openai 会话库。")
+                    .font(.caption).foregroundStyle(.secondary)
                 codexBucketStatus
-                Divider().opacity(0.4)
-                HStack(spacing: 20) {
-                    Toggle("迁移已有 openai 会话", isOn: Binding(
-                        get: { settings.migrateCodexSessionsOnUnify },
-                        set: { setMigrateExisting($0) }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .help("勾选后立即迁移一次；之后每次开启统一会话历史也会顺带迁移。")
-                    Toggle("启动时自动修复", isOn: Binding(
-                        get: { appState.guiConfig.snapshot().codexSessionRepairOnLaunch },
-                        set: { value in
-                            _ = try? appState.guiConfig.update { $0.codexSessionRepairOnLaunch = value }
-                        }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .disabled(!settings.unifyCodexSessionHistory)
-                    .help(
-                        settings.unifyCodexSessionHistory
-                            ? "每次启动 App 时，若 Codex 未运行则自动把 openai 旧会话迁进 custom 桶。"
-                            : "需要先开启「统一会话历史」，启动修复才会执行。"
-                    )
-                    if CodexSessionUnifier.hasOfficialUnifyBackup() {
-                        Toggle("关闭时按备份还原", isOn: Binding(
-                            get: { settings.restoreCodexSessionsOnDisableUnify },
-                            set: { value in
-                                settings.restoreCodexSessionsOnDisableUnify = value
-                                _ = try? AgentProviderStore.saveSettings(settings)
-                            }
-                        ))
-                        .toggleStyle(.checkbox)
-                        .help("只把当初从 openai 迁入的会话改回官方桶；开启统一后新产生的会话仍留在 custom。")
+                HStack {
+                    Button("当前官方配置改用共享库") {
+                        do {
+                            try pinCodexSessionBucket()
+                            codexLiveBucket = AgentLiveConfigWriter.codexLiveProviderID()
+                            appState.flash("当前配置已使用共享会话库")
+                        } catch { appState.flash(error.localizedDescription, error: true) }
                     }
-                    Spacer()
+                    .disabled(!AgentLiveConfigWriter.canRepinOfficialCodexBucket())
+                    Button("迁移已有官方会话…") { setMigrateExisting(true) }
+                    if CodexSessionUnifier.hasOfficialUnifyBackup() {
+                        Button("撤销已有会话迁移…") { restoreMigratedSessions() }
+                    }
                 }
-                .font(.caption)
-                Button("清理加密思考…") {
-                    sanitizeEncryptedThinking()
-                }
-                .font(.caption)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("备份后去掉会话里带 encrypted_content 的 reasoning/compaction，避免统一历史后 thinking_signature_invalid")
+                Toggle("启动时自动迁移官方旧会话", isOn: Binding(
+                    get: { appState.guiConfig.snapshot().codexSessionRepairOnLaunch },
+                    set: { value in
+                        _ = try? appState.guiConfig.update { $0.codexSessionRepairOnLaunch = value }
+                    }
+                ))
+                .disabled(!settings.unifyCodexSessionHistory)
+                .help("需启用共享库策略，且 Codex 未运行时才会执行；修改会话前备份。")
+                Button("清理加密思考…") { sanitizeEncryptedThinking() }
+                    .help("备份后清理绑定原上游的加密思考记录，避免恢复会话时签名错误。")
+                Text("迁移、撤销迁移和清理均是独立操作；修改前会备份，Codex 运行中拒绝执行。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -399,7 +373,7 @@ struct AgentsPageView: View {
                 .font(.caption)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text("远程压缩：由服务端压缩上下文，Codex 只在 model_providers 的 name 等于 OpenAI 时才启用，逐个 Provider 在编辑里开。")
+                Text("远程压缩：由服务端压缩上下文，Codex 只在 model_providers 的 name 等于 OpenAI 时才启用，在自定义接入配置中设置；官方接入自动使用官方能力。")
                 Text(remoteCompactionStateText(live))
                     .foregroundStyle(.tertiary)
             }
@@ -410,14 +384,14 @@ struct AgentsPageView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func remoteCompactionStateText(_ live: AgentProviderProfile?) -> String {
-        guard let live else { return "当前没有启用中的 Codex Provider。" }
-        guard live.claimsOpenAIProvider else {
-            return "当前「\(live.name)」未开启，走 Codex 自带的本地压缩。"
-        }
-        return live.codexSubscriptionOnly
-            ? "当前「\(live.name)」已开启，且同名 GPT 模型已隔离到 Codex 订阅。"
-            : "当前「\(live.name)」已开启；未隔离同名模型，压缩可能落到没有压缩端点的上游。"
+    private func remoteCompactionStateText(_ profile: AgentProviderProfile?) -> String {
+        let live = AgentLiveConfigReader.read(agent: .codex)
+        guard live.configExists, live.readable else { return "尚未读取到有效的 Codex 配置。" }
+        let official = (live.endpoint ?? "").isEmpty
+            && (live.providerID == nil || live.providerID == "openai")
+        let configured = official || live.providerName == CodexStableProvider.openAIProviderName
+        let status = configured ? "已配置服务端压缩；端点能力尚未验证。" : "当前配置未启用服务端压缩。"
+        return status + " CPA 同名模型来源：" + appState.guiConfig.snapshot().overlappingModelPolicy.title
     }
 
     private func providerCard(_ profile: AgentProviderProfile) -> some View {
@@ -457,7 +431,7 @@ struct AgentsPageView: View {
                             Text(profile.name)
                                 .font(.headline)
                             if profile.isDefault {
-                                Text("默认")
+                                Text("快照")
                                     .font(.caption2.weight(.bold))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -481,7 +455,7 @@ struct AgentsPageView: View {
                                     .foregroundStyle(.blue)
                             }
                             if isCurrent {
-                                Text("当前")
+                                Text("配置匹配")
                                     .font(.caption2.weight(.bold))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -540,17 +514,17 @@ struct AgentsPageView: View {
                     }
 
                     if isCurrent {
-                        Button {} label: {
-                            Label("已启用", systemImage: "checkmark.circle.fill")
+                        Button { enable(profile) } label: {
+                            Label("重新应用", systemImage: "checkmark.circle.fill")
                                 .frame(minWidth: 72)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(true)
+                        .disabled(isBusy)
                     } else {
                         Button {
                             enable(profile)
                         } label: {
-                            Label("启用", systemImage: "checkmark.circle")
+                            Label("应用配置", systemImage: "checkmark.circle")
                                 .frame(minWidth: 72)
                         }
                         .buttonStyle(.borderedProminent)
@@ -776,7 +750,7 @@ struct AgentsPageView: View {
                 agent: agent,
                 in: profiles,
                 preferring: settings.currentProviderID(for: agent)
-            ) ?? fallbackCurrentProviderID(for: agent)
+            )
             if settings.currentProviderID(for: agent) != matched {
                 settings.setCurrentProviderID(matched, for: agent)
                 changed = true
@@ -806,20 +780,6 @@ struct AgentsPageView: View {
             }
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// No custom endpoint in the live config means the agent is on official or default snapshot.
-    private func fallbackCurrentProviderID(for agent: AgentKind) -> String? {
-        let live = AgentLiveConfigReader.read(agent: agent)
-        guard (live.endpoint ?? "").isEmpty else { return nil }
-        if let current = settings.currentProviderID(for: agent),
-           let hit = profiles.first(where: { $0.id == current && $0.agent == agent && ($0.isOfficial || $0.isDefault) }) {
-            return hit.id
-        }
-        if let off = profiles.first(where: { $0.agent == agent && $0.isOfficial }) {
-            return off.id
-        }
-        return profiles.first(where: { $0.agent == agent && $0.isDefault })?.id
     }
 
     private func currentAPIKey() -> String {
@@ -855,7 +815,7 @@ struct AgentsPageView: View {
                 == AgentLiveConfigReader.normalizeComparableEndpoint(imported.endpoint, agent: selectedAgent)
                 && $0.apiKey == imported.apiKey
         }) {
-            appState.flash("已存在相同 Provider：\(existing.name)")
+            appState.flash("已存在相同接入配置：\(existing.name)")
             return
         }
         saveProfile(imported)
@@ -878,25 +838,18 @@ struct AgentsPageView: View {
             }
             let hadDefaultBefore = profiles.contains(where: { $0.agent == next.agent && $0.isDefault })
             try AgentLiveConfigWriter.enable(next, settings: settings)
-            // captureIfNeeded may have inserted 「默认」
+            // captureIfNeeded may have inserted 「接管前配置」
             profiles = AgentProviderStore.loadProfiles()
             settings.setCurrentProviderID(next.id, for: next.agent)
             try AgentProviderStore.saveSettings(settings)
             let createdDefault = !hadDefaultBefore
                 && !next.isDefault
                 && profiles.contains(where: { $0.agent == next.agent && $0.isDefault })
-            let suffix = createdDefault ? "（已保存启用前配置为「默认」）" : ""
+            let suffix = createdDefault ? "（已保存启用前配置为「接管前配置」）" : ""
             codexLiveBucket = AgentLiveConfigWriter.codexLiveProviderID()
             appState.flash("已启用 \(next.name) → \(next.agent.title)\(suffix)")
-            syncSubscriptionIsolation(for: next)
         } catch {
             appState.flash(error.localizedDescription, error: true)
-        }
-    }
-
-    private func syncSubscriptionIsolation(for profile: AgentProviderProfile) {
-        Task {
-            await appState.syncCodexSubscriptionIsolation(for: profile)
         }
     }
 
@@ -922,8 +875,7 @@ struct AgentsPageView: View {
                 profiles = AgentProviderStore.loadProfiles()
                 reloadAll()
                 appState.flash("已保存 \(next.name)，并同步到 \(next.agent.liveConfigPathHint)")
-                syncSubscriptionIsolation(for: next)
-            } else {
+                } else {
                 appState.flash("已保存 \(next.name)")
             }
         } catch {
@@ -941,10 +893,12 @@ struct AgentsPageView: View {
             var rollbackNote = ""
             var isWarning = false
             if wasLive, hasSnapshot {
-                try AgentDefaultSnapshot.restore(agent: profile.agent)
-                rollbackNote = "，\(profile.agent.liveConfigPathHint) 已还原为「默认」"
+                if let backup = profiles.first(where: { $0.agent == profile.agent && $0.isDefault }) {
+                    try AgentLiveConfigWriter.enable(backup, settings: settings)
+                }
+                rollbackNote = "，\(profile.agent.liveConfigPathHint) 已还原为「接管前配置」"
             } else if wasLive {
-                rollbackNote = "，但没有「默认」快照可还原，\(profile.agent.liveConfigPathHint) 仍是它的配置"
+                rollbackNote = "，但没有「接管前配置」快照可还原，\(profile.agent.liveConfigPathHint) 仍是它的配置"
                 isWarning = true
             }
             profiles = try AgentProviderStore.delete(id: profile.id)
@@ -968,7 +922,7 @@ struct AgentsPageView: View {
         guard landed == CodexStableProvider.id else {
             throw AppError(
                 "~/.codex/config.toml 的 model_provider 是 \(landed ?? "未设置")，指向第三方 provider。"
-                + "改桶会让它已有的历史对不上，因此未改动；启用一个 Codex Provider 即可进入共享桶。"
+                + "改桶会让它已有的历史对不上，因此未改动；启用一个 Codex 接入配置即可进入共享桶。"
             )
         }
     }
@@ -978,85 +932,31 @@ struct AgentsPageView: View {
     /// Storing the flag alone would leave the old sessions where they are until the next unify
     /// toggle, which reads as a no-op checkbox.
     private func setMigrateExisting(_ enabled: Bool) {
-        let previous = settings.migrateCodexSessionsOnUnify
-        settings.migrateCodexSessionsOnUnify = enabled
         do {
-            try AgentProviderStore.saveSettings(settings)
-            guard enabled else {
-                appState.flash("已关闭迁移：openai 旧会话保持原样")
-                return
-            }
-            guard settings.unifyCodexSessionHistory else {
-                appState.flash("已记录：开启「统一会话历史」时会一并迁移 openai 旧会话")
-                return
-            }
             let result = try CodexSessionUnifier.migrateOfficialSessionsToCustom()
             sessions = AgentSessionService.listSessions()
-            if result.jsonlRewritten == 0, result.sqliteUpdated == 0 {
-                appState.flash("没有需要迁移的 openai 旧会话")
-            } else {
-                let backup = result.backupDirectory.map { "；备份：\($0)" } ?? ""
-                appState.flash(
-                    "已迁移 \(result.jsonlRewritten) 个旧会话文件、\(result.sqliteUpdated) 条索引\(backup)"
-                )
-            }
-        } catch {
-            settings.migrateCodexSessionsOnUnify = previous
-            _ = try? AgentProviderStore.saveSettings(settings)
-            appState.flash(error.localizedDescription, error: true)
-        }
+            appState.flash("已迁移旧会话：\(result.jsonlRewritten) 个文件、\(result.sqliteUpdated) 条索引")
+        } catch { appState.flash(error.localizedDescription, error: true) }
+    }
+
+    private func restoreMigratedSessions() {
+        do {
+            let result = try CodexSessionUnifier.restoreOfficialSessionsFromBackups()
+            sessions = AgentSessionService.listSessions()
+            appState.flash("已撤销旧会话迁移：\(result.jsonlRestored) 个文件、\(result.sqliteRestored) 条索引；当前接入配置不变")
+        } catch { appState.flash(error.localizedDescription, error: true) }
     }
 
     private func setUnify(_ enabled: Bool) {
+        let previous = settings
         settings.unifyCodexSessionHistory = enabled
+        settings.migrateCodexSessionsOnUnify = false
+        settings.restoreCodexSessionsOnDisableUnify = false
         do {
             try AgentProviderStore.saveSettings(settings)
-            if enabled {
-                try pinCodexSessionBucket()
-            }
-            if enabled, settings.migrateCodexSessionsOnUnify {
-                let result = try CodexSessionUnifier.migrateOfficialSessionsToCustom()
-                if result.jsonlRewritten == 0, result.sqliteUpdated == 0 {
-                    appState.flash("已固定新会话到 custom 桶（没有需要迁移的 openai 旧会话）")
-                } else {
-                    let backup = result.backupDirectory.map { "；备份：\($0)" } ?? ""
-                    appState.flash(
-                        "已固定新会话到 custom 桶，并重写 \(result.jsonlRewritten) 个旧会话文件、\(result.sqliteUpdated) 条索引\(backup)"
-                    )
-                }
-                sessions = AgentSessionService.listSessions()
-            } else if enabled {
-                appState.flash("已开启统一会话历史：model_provider 已固定为 \(CodexStableProvider.id)")
-            } else if settings.restoreCodexSessionsOnDisableUnify,
-                      CodexSessionUnifier.hasOfficialUnifyBackup()
-            {
-                let result = try CodexSessionUnifier.restoreOfficialSessionsFromBackups()
-                sessions = AgentSessionService.listSessions()
-                if let reason = result.skippedReason {
-                    let message: String
-                    switch reason {
-                    case "no_backup_ledger":
-                        message = "已关闭统一会话历史（没有可还原的迁移备份）"
-                    case "nothing_to_restore":
-                        message = "已关闭统一会话历史（账本会话当前已不在 custom 桶，无需还原）"
-                    default:
-                        message = "已关闭统一会话历史（\(reason)）"
-                    }
-                    appState.flash(message)
-                } else {
-                    let backup = result.backupDirectory.map { "；还原前快照：\($0)" } ?? ""
-                    appState.flash(
-                        "已关闭并还原官方会话：文件 \(result.jsonlRestored)，索引 \(result.sqliteRestored)\(backup)"
-                    )
-                }
-            } else {
-                // Off keeps the live config on `custom`; it only stops migrating old sessions.
-                appState.flash("已关闭统一会话历史：live 配置仍写入 custom 桶，仅不再迁移 openai 旧会话")
-            }
+            appState.flash("会话库策略已保存，下次应用接入配置时生效")
         } catch {
-            // Keep the stored flag in sync with what actually happened on disk.
-            settings.unifyCodexSessionHistory = !enabled
-            _ = try? AgentProviderStore.saveSettings(settings)
+            settings = previous
             appState.flash(error.localizedDescription, error: true)
         }
     }
@@ -1189,7 +1089,7 @@ private struct AgentProviderEditorSheet: View {
                 modelOverrides: $modelOverrides
             )
         }
-        Text("实际使用的档位请在 \(agent.title) 里调整；启用 Provider 不会改写当前思考强度。")
+        Text("实际使用的档位请在 \(agent.title) 里调整；启用接入配置不会改写当前思考强度。")
             .font(.caption2)
             .foregroundStyle(.tertiary)
     }
@@ -1209,15 +1109,6 @@ private struct AgentProviderEditorSheet: View {
                 }
             }
 
-            Toggle(isOn: $codexSubscriptionOnly) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("同名 GPT 模型只走 Codex 订阅")
-                    Text("启用本 Provider 时，把订阅同样提供的 GPT 模型从其他所有 Provider 的路由里摘掉（写它们的 excluded-models），切换到别的 Provider 会自动还原。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
             if claimsOpenAIProvider, !uncompactableModels.isEmpty {
                 Label(
                     "这些模型的上游没有 /responses/compact：\(uncompactableModels.joined(separator: "、"))。Codex 远程压缩失败不会退回本地压缩，会话会一直不压缩直到超出上下文。",
@@ -1225,8 +1116,8 @@ private struct AgentProviderEditorSheet: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.orange)
-            } else if claimsOpenAIProvider, !codexSubscriptionOnly {
-                Text("某个 API Provider 当前权重高于 Codex 订阅，同名 GPT 模型会先落到它那边，那边没有压缩端点。建议一并开启上面的隔离开关。")
+            } else if claimsOpenAIProvider {
+                Text("服务端必须支持 /responses/compact。经 CPA 接入时，请在「配置 → 同名模型」选择全局来源策略；优先级不会保证压缩端点可用。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1237,12 +1128,16 @@ private struct AgentProviderEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(existing == nil ? "添加 Provider" : "编辑 Provider")
+            Text(existing == nil ? "添加接入配置" : "编辑接入配置")
                 .font(.title3.weight(.semibold))
             Text(agent.title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            if let existing, AgentProviderStore.loadSettings().currentProviderID(for: agent) == existing.id {
+                Text("保存会立即更新本机客户端配置。运行中的客户端是否已重新加载需另行确认。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Form {
                 Section {
                     TextField("名称", text: $name)

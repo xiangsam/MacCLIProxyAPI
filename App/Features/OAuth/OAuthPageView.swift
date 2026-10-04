@@ -29,7 +29,7 @@ struct OAuthPageView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .navigationTitle("OAuth")
+        .navigationTitle("订阅授权")
         .sheet(isPresented: $showFlowSheet) {
             flowSheet
         }

@@ -42,7 +42,7 @@ struct RemoteAgentProviderEditorSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(existing == nil ? "添加远程 Provider" : "编辑远程 Provider")
+                Text(existing == nil ? "添加远程接入配置" : "编辑远程接入配置")
                     .font(.headline)
                 Spacer()
                 Button("取消") { dismiss() }
@@ -128,23 +128,15 @@ struct RemoteAgentProviderEditorSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        Toggle(isOn: $codexSubscriptionOnly) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("同名 GPT 模型只走 Codex 订阅")
-                                Text("在本机 CPA 上把订阅同样提供的 GPT 模型从其他 Provider 的路由里摘掉，影响所有客户端。")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        if claimsOpenAIProvider, !uncompactableModels.isEmpty {
+            if claimsOpenAIProvider, !uncompactableModels.isEmpty {
                             Label(
                                 "这些模型的上游没有 /responses/compact：\(uncompactableModels.joined(separator: "、"))。远程压缩失败不会退回本地压缩。",
                                 systemImage: "exclamationmark.triangle.fill"
                             )
                             .font(.caption)
                             .foregroundStyle(.orange)
-                        } else if claimsOpenAIProvider, !codexSubscriptionOnly {
-                            Text("某个 API Provider 当前权重高于 Codex 订阅，同名 GPT 模型会先落到它那边，那边没有压缩端点。建议一并开启上面的隔离开关。")
+                        } else if claimsOpenAIProvider {
+                            Text("服务端必须支持 /responses/compact。经 CPA 接入时，请在「配置 → 同名模型」选择全局来源策略；优先级不会保证压缩端点可用。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

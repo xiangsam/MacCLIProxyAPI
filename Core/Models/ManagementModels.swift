@@ -10,10 +10,10 @@ enum ProviderKind: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .codex: return "Codex 原生 Responses"
-        case .openai: return "OpenAI 兼容"
-        case .claude: return "Claude"
-        case .gemini: return "Gemini"
+        case .codex: return "Responses 原生接口"
+        case .openai: return "Chat Completions"
+        case .claude: return "Anthropic Messages"
+        case .gemini: return "Gemini API"
         }
     }
 
@@ -24,7 +24,7 @@ enum ProviderKind: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .codex:
             return "这是协议选择，不是品牌限定：任何上游支持原生 Responses 接口的 Provider 都可以放这里"
-                + "（零转换直通）。只支持 Chat Completions 的上游请放到「OpenAI 兼容」。"
+                + "（零转换直通）。只支持 Chat Completions 的上游请放到「Chat Completions」。"
         default:
             return nil
         }

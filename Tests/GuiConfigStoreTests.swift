@@ -99,4 +99,19 @@ final class GuiConfigStoreTests: XCTestCase {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         return (attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0
     }
+    func testRoutingPolicyMigratesAndRoundTrips() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("config.toml")
+        let keys = root.appendingPathComponent("keys.json")
+        try "routing-exclude-codex-overlapping-models = true\n".write(to: url, atomically: true, encoding: .utf8)
+        let store = GuiConfigStore(fileURL: url, apiKeysURL: keys)
+        XCTAssertEqual(store.snapshot().overlappingModelPolicy, .apiOnly)
+        _ = try store.update { $0.overlappingModelPolicy = .subscriptionOnly }
+        let reloaded = GuiConfigStore(fileURL: url, apiKeysURL: keys)
+        XCTAssertEqual(reloaded.snapshot().overlappingModelPolicy, .subscriptionOnly)
+        XCTAssertFalse(reloaded.snapshot().routingExcludeCodexOverlappingModels)
+    }
+
 }

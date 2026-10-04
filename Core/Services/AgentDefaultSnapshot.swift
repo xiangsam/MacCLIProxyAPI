@@ -57,7 +57,7 @@ enum AgentDefaultSnapshot {
         let dir = directory(for: agent)
         let fm = FileManager.default
         guard fm.fileExists(atPath: dir.path) else {
-            throw AppError("未找到「默认」配置快照，无法恢复启用前状态")
+            throw AppError("未找到「接管前配置」配置快照，无法恢复启用前状态")
         }
 
         let manifestURL = dir.appendingPathComponent("manifest.json")

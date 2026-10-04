@@ -226,7 +226,7 @@ struct CPAProviderModelsEditorSheet: View {
             guard let idx = list.firstIndex(where: { matches($0, item) })
                     ?? (item.listIndex < list.count ? item.listIndex : nil)
             else {
-                throw AppError("找不到 Provider，请刷新后重试")
+                throw AppError("找不到上游 API，请刷新后重试")
             }
             var entry = list[idx]
             entry["models"] = rows.map { row -> [String: Any] in
@@ -263,7 +263,7 @@ struct CPAProviderModelsEditorSheet: View {
             list[idx] = entry
             // This is a whole-list PUT: without re-injection the sibling providers we are not
             // editing would be written back without their keys.
-            list = ProviderSecretStore.reinject(into: list, section: storage)
+            list = appState.applyingSourcePolicy(to: ProviderSecretStore.reinject(into: list, section: storage), section: storage)
             _ = try await client.sendJSON(method: "PUT", path: path, body: list)
             appState.flash("已更新 \(rows.count) 个模型的上下文/思考档位")
             onSaved()

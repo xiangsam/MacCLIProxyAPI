@@ -4,6 +4,9 @@ import Foundation
 enum AgentLiveConfigReader {
     struct Snapshot: Equatable, Sendable {
         var configExists = false
+        var readable = true
+        var providerName: String?
+        var providerID: String?
         var endpoint: String?
         var apiKey: String?
         var model: String?
@@ -45,23 +48,36 @@ enum AgentLiveConfigReader {
         in profiles: [AgentProviderProfile],
         preferring current: String? = nil
     ) -> String? {
+        guard live.configExists, live.readable else { return nil }
         guard let endpoint = live.endpoint?.trimmingCharacters(in: .whitespacesAndNewlines), !endpoint.isEmpty
         else {
-            if let current, let hit = profiles.first(where: { $0.id == current && $0.agent == agent && ($0.isOfficial || $0.isDefault) }) {
+            if agent == .codex, let provider = live.providerID,
+               !["openai", CodexStableProvider.id].contains(provider) { return nil }
+            if agent == .codex, live.providerID == CodexStableProvider.id,
+               live.providerName != CodexStableProvider.openAIProviderName { return nil }
+            if let current, let hit = profiles.first(where: { $0.id == current && $0.agent == agent && $0.isOfficial }) {
                 return hit.id
             }
             if let hit = profiles.first(where: { $0.agent == agent && $0.isOfficial }) {
                 return hit.id
             }
-            return profiles.first(where: { $0.agent == agent && $0.isDefault })?.id
+            return nil
         }
 
         let key = (live.apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let candidates = profiles.filter { profile in
             profile.agent == agent && endpointsMatch(profile.endpoint, endpoint, agent: agent)
         }
-        let exact = key.isEmpty ? [] : candidates.filter { $0.apiKey == key }
-        let pool = exact.isEmpty ? candidates : exact
+        guard !key.isEmpty else { return nil }
+        let pool = candidates.filter { profile in
+            profile.apiKey == key && profile.model == (live.model ?? "")
+                && (profile.agent != .codex || (profile.resolvedCodexCatalogModels == live.catalogModels))
+                && (profile.agent != .claude || ([AgentModelRole.sonnet, .opus, .haiku, .fable, .subagent].allSatisfy { role in
+                    let expected = profile.model(for: role)
+                    let normalized = role.supportsOneMContext(for: .claude) ? expected : ClaudeContextMarker.stripOneM(expected)
+                    return normalized == (live.modelMappings[role.rawValue] ?? "")
+                }))
+        }
 
         if let current, pool.contains(where: { $0.id == current }) {
             return current
@@ -76,6 +92,7 @@ enum AgentLiveConfigReader {
 
     static func importAsProfile(agent: AgentKind) -> AgentProviderProfile? {
         let live = read(agent: agent)
+        guard live.configExists, live.readable else { return nil }
         guard let endpoint = live.endpoint?.trimmingCharacters(in: .whitespacesAndNewlines), !endpoint.isEmpty
         else { return nil }
         let key = (live.apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,9 +126,9 @@ enum AgentLiveConfigReader {
             .appendingPathComponent(".claude/settings.json")
         let exists = FileManager.default.fileExists(atPath: url.path)
         guard let data = try? Data(contentsOf: url),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let env = json["env"] as? [String: Any]
-        else { return Snapshot(configExists: exists) }
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return Snapshot(configExists: exists, readable: false) }
+        let env = json["env"] as? [String: Any] ?? [:]
         var mappings: [String: String] = [:]
         for (role, key) in [
             (AgentModelRole.sonnet, "ANTHROPIC_DEFAULT_SONNET_MODEL"),
@@ -140,7 +157,9 @@ enum AgentLiveConfigReader {
         let configURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/config.toml")
         let exists = FileManager.default.fileExists(atPath: configURL.path)
-        let text = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+            return Snapshot(configExists: exists, readable: false)
+        }
         let providerID = TOMLEdit.value(text, table: nil, key: "model_provider")
         let providerTable = providerID.map { "model_providers." + TOMLEdit.quoteTableComponent($0) }
         let baseURL = providerTable.flatMap { TOMLEdit.value(text, table: $0, key: "base_url") }
@@ -172,6 +191,8 @@ enum AgentLiveConfigReader {
         }
         return Snapshot(
             configExists: exists,
+            providerName: providerTable.flatMap { TOMLEdit.value(text, table: $0, key: "name") },
+            providerID: providerID,
             endpoint: baseURL,
             apiKey: apiKey,
             model: model,

@@ -189,8 +189,7 @@ struct AgentProviderProfile: Identifiable, Equatable, Codable, Sendable {
     /// `/responses/compact`: Codex picks remote-vs-local once from this flag and never
     /// falls back, so a failed remote compaction just leaves the history uncompacted.
     var claimsOpenAIProvider: Bool
-    /// While enabled, keep the GPT ids the Codex subscription also serves away from every
-    /// other provider, so they cannot be answered by an upstream without remote compaction.
+    /// Legacy persisted value. Routing is now owned by GuiConfigFile.overlappingModelPolicy.
     var codexSubscriptionOnly: Bool
     /// Built-in Local CPA profile — endpoint/key refreshed from GUI config on enable.
     var isLocalCPA: Bool
@@ -266,7 +265,7 @@ struct AgentProviderProfile: Identifiable, Equatable, Codable, Sendable {
         return AgentProviderProfile(
             id: defaultID(for: agent),
             agent: agent,
-            name: "默认",
+            name: "接管前配置",
             endpoint: endpoint,
             apiKey: apiKey,
             model: model,

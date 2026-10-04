@@ -4,6 +4,11 @@ import Foundation
 enum RemoteAgentProviderStore {
     struct State: Equatable, Codable, Sendable {
         var profiles: [AgentProviderProfile]
+        /// Remote profile id → source profile id on this Mac.
+        var sourceProfileIDs: [String: String] = [:]
+        /// Last successfully written contents; not a claim about a running remote process.
+        var appliedProfiles: [String: AgentProviderProfile] = [:]
+        var appliedHistoryPolicies: [String: Bool] = [:]
         /// agent.rawValue → provider id
         var currentProviderIDs: [String: String]
         /// Remote Codex: keep new sessions in `custom` bucket (already written by enable).
@@ -20,6 +25,7 @@ enum RemoteAgentProviderStore {
 
         enum CodingKeys: String, CodingKey {
             case profiles
+            case sourceProfileIDs, appliedProfiles, appliedHistoryPolicies
             case currentProviderIDs
             case unifyCodexSessionHistory
             case migrateCodexSessionsOnUnify
@@ -40,9 +46,31 @@ enum RemoteAgentProviderStore {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             profiles = try c.decodeIfPresent([AgentProviderProfile].self, forKey: .profiles) ?? []
+            sourceProfileIDs = try c.decodeIfPresent([String: String].self, forKey: .sourceProfileIDs) ?? [:]
+            appliedProfiles = try c.decodeIfPresent([String: AgentProviderProfile].self, forKey: .appliedProfiles) ?? [:]
+            appliedHistoryPolicies = try c.decodeIfPresent([String: Bool].self, forKey: .appliedHistoryPolicies) ?? [:]
             currentProviderIDs = try c.decodeIfPresent([String: String].self, forKey: .currentProviderIDs) ?? [:]
             unifyCodexSessionHistory = try c.decodeIfPresent(Bool.self, forKey: .unifyCodexSessionHistory) ?? true
             migrateCodexSessionsOnUnify = try c.decodeIfPresent(Bool.self, forKey: .migrateCodexSessionsOnUnify) ?? false
+        }
+
+        func needsSync(_ profile: AgentProviderProfile) -> Bool {
+            guard let applied = appliedProfiles[profile.agent.rawValue] else { return true }
+            return !Self.sameConfiguration(applied, profile)
+                || (profile.agent == .codex
+                    && appliedHistoryPolicies[profile.agent.rawValue] != unifyCodexSessionHistory)
+        }
+
+        static func sameConfiguration(_ lhs: AgentProviderProfile, _ rhs: AgentProviderProfile) -> Bool {
+            var a = lhs
+            var b = rhs
+            // Timestamps and notes are metadata, not remote configuration.
+            a.updatedAt = b.updatedAt
+            a.createdAt = b.createdAt
+            a.notes = b.notes
+            a.codexSubscriptionOnly = false
+            b.codexSubscriptionOnly = false
+            return a == b
         }
 
         func currentProviderID(for agent: AgentKind) -> String? {
@@ -183,7 +211,7 @@ enum RemoteAgentProviderStore {
             )
             profile.id = id
             profile.isLocalCPA = true
-            profile.name = "本机 CPA（远程）"
+            profile.name = "通过此 Mac 的 CPA"
             if let idx = state.profiles.firstIndex(where: { $0.id == id }) {
                 let existing = state.profiles[idx]
                 if existing.endpoint != profile.endpoint
@@ -240,6 +268,46 @@ enum RemoteAgentProviderStore {
         return load(hostID: hostID)
     }
 
+    /// Refresh local drafts only. Applying them to the host is always a separate SSH action.
+    static func importingLocalProfiles(
+        _ profiles: [AgentProviderProfile], into original: State,
+        hostID: String, cpaHost: String?, cpaPort: UInt16, apiKey: String
+    ) -> State {
+        var state = original
+        for index in state.profiles.indices where state.profiles[index].isDefault && state.profiles[index].name == "默认" {
+            state.profiles[index].name = "接管前配置"
+        }
+        for local in profiles where !local.isDefault {
+            var remote = local
+            if local.isOfficial {
+                remote.id = officialID(hostID: hostID, agent: local.agent)
+            } else if local.isLocalCPA || AgentLiveConfigReader.endpointsMatch(
+                local.endpoint,
+                AgentProviderProfile.localCPA(agent: local.agent, port: cpaPort, apiKey: apiKey).endpoint,
+                agent: local.agent
+            ) {
+                guard let cpaHost else { continue }
+                remote = RemoteAgentConfigurator.remoteLocalCPAProfile(
+                    agent: local.agent, template: local, cpaHost: cpaHost,
+                    cpaPort: cpaPort, apiKey: apiKey
+                )
+                remote.id = local.isLocalCPA ? localCPAID(hostID: hostID, agent: local.agent)
+                    : "remote-\(hostID)-source-\(local.id)"
+                remote.isLocalCPA = true
+                remote.name = local.isLocalCPA ? "通过此 Mac 的 CPA" : local.name
+                remote.createdAt = local.createdAt
+                remote.updatedAt = local.updatedAt
+            } else {
+                remote.id = "remote-\(hostID)-source-\(local.id)"
+            }
+            state.sourceProfileIDs[remote.id] = local.id
+            if let index = state.profiles.firstIndex(where: { $0.id == remote.id }) {
+                state.profiles[index] = remote
+            } else { state.profiles.append(remote) }
+        }
+        return state
+    }
+
     static func upsert(hostID: String, profile: AgentProviderProfile) throws -> State {
         var state = load(hostID: hostID)
         var next = profile
@@ -258,6 +326,7 @@ enum RemoteAgentProviderStore {
         guard let removed = state.profiles.first(where: { $0.id == id }) else { return state }
         guard !removed.isOfficial && !removed.isLocalCPA else { return state }
         state.profiles.removeAll { $0.id == id }
+        state.sourceProfileIDs.removeValue(forKey: id)
         for agent in AgentKind.allCases where state.currentProviderID(for: agent) == id {
             state.setCurrentProviderID(nil, for: agent)
         }
@@ -271,6 +340,8 @@ enum RemoteAgentProviderStore {
     static func setCurrent(hostID: String, agent: AgentKind, providerID: String) throws -> State {
         var state = load(hostID: hostID)
         state.setCurrentProviderID(providerID, for: agent)
+        state.appliedProfiles[agent.rawValue] = state.profiles.first { $0.id == providerID }
+        state.appliedHistoryPolicies[agent.rawValue] = state.unifyCodexSessionHistory
         try save(hostID: hostID, state: state)
         return state
     }
@@ -287,7 +358,7 @@ enum RemoteAgentProviderStore {
         return state
     }
 
-    /// Register 「默认」profile after first remote capture (idempotent).
+    /// Register 「接管前配置」profile after first remote capture (idempotent).
     @discardableResult
     static func ensureDefaultProfile(hostID: String, agent: AgentKind) throws -> State {
         let id = defaultID(hostID: hostID, agent: agent)
@@ -297,7 +368,7 @@ enum RemoteAgentProviderStore {
         }
         var profile = AgentProviderProfile.makeDefault(agent: agent)
         profile.id = id
-        profile.name = "默认"
+        profile.name = "接管前配置"
         profile.notes = "启用前的远程配置快照，可随时切回"
         state.profiles.insert(profile, at: 0)
         try save(hostID: hostID, state: state)

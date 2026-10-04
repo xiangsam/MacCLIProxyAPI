@@ -1,20 +1,8 @@
 import Foundation
 import Yams
 
-/// Keeps the GPT ids a Codex subscription also serves away from every other provider.
-///
-/// CPA multiplexes: one `gpt-5.6-sol` request can be answered by the Codex OAuth subscription
-/// or by any API-key provider that declares the same id, and a `codex-api-key` native Responses
-/// row wins today because it carries a priority. That is normally what the user wants — until a
-/// Codex profile claims the OpenAI provider identity to get remote compaction, because
-/// `/responses/compact` only exists on the subscription. A compaction answered by a
-/// `codex-api-key` provider 404s, and Codex neither retries locally nor reports it.
-///
-/// The lever is `excluded-models`, the per-credential counterpart of the `oauth-excluded-models`
-/// used by the 「GPT 同名模型完全不走 Codex 订阅」 switch — the same idea pointed the other way.
-/// It only applies to API-key credentials (`ApplyAuthExcludedModelsMeta` takes the OAuth branch
-/// for everything else), which is exactly the set we want to silence: the subscription itself is
-/// an OAuth credential and cannot be reached by it.
+/// Implements the API-key side of the core-wide, mutually exclusive source policy.
+/// Client profile switches never call this service. Priority values are left untouched.
 enum CodexSubscriptionIsolation {
     /// Config sections holding API-key credentials, i.e. everything that is not a subscription.
     static let credentialSections = [
@@ -27,41 +15,6 @@ enum CodexSubscriptionIsolation {
     /// Ids the Codex subscription serves. Shared with the inverse global switch so both sides of
     /// the overlap are described in one place.
     static var patterns: [String] { CoreConfigStore.codexOverlappingModelExclusions }
-
-    enum Outcome: Equatable {
-        case unchanged
-        case applied
-        case reverted
-        /// The config page's inverse switch is still on; together they exclude the ids everywhere.
-        case conflictsWithGlobalExclusion
-    }
-
-    /// Converge the core onto what `profile` wants, for both local and remote Codex flows.
-    ///
-    /// Called on every Codex enable, not only when the switch is on, so switching away from an
-    /// isolating profile puts the other providers back into rotation.
-    static func sync(
-        for profile: AgentProviderProfile,
-        globalExclusionEnabled: Bool,
-        client: ManagementClient
-    ) async throws -> Outcome {
-        guard profile.agent == .codex, !profile.isDefault else { return .unchanged }
-        let wanted = profile.codexSubscriptionOnly
-        let changed = try await sync(enabled: wanted, client: client)
-        if wanted, globalExclusionEnabled { return .conflictsWithGlobalExclusion }
-        guard changed else { return .unchanged }
-        return wanted ? .applied : .reverted
-    }
-
-    /// Push the desired state onto the running core. Returns true when the config had to change.
-    @discardableResult
-    static func sync(enabled: Bool, client: ManagementClient) async throws -> Bool {
-        let yaml = try await client.getConfigYAML()
-        guard var root = try Yams.load(yaml: yaml) as? [String: Any] else { return false }
-        guard apply(enabled: enabled, to: &root) else { return false }
-        try await client.putConfigYAML(try Yams.dump(object: root, width: -1, sortKeys: false))
-        return true
-    }
 
     /// Add or remove our patterns across every API-key credential. Returns true when `root` changed.
     ///
