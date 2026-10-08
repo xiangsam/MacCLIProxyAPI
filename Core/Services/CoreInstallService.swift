@@ -36,42 +36,36 @@ actor CoreInstallService {
         )
     }
 
-    /// Resolve latest release with multiple sources (GitHub API is often rate-limited).
+    /// The default channel contains the tested native-Responses attribution patch.
+    /// Explicit numeric versions still install official upstream releases.
     func checkLatest() async throws -> CoreLatest {
         let platform = detectPlatform()
-        var errors: [String] = []
-
-        // 1) Atom feed (no API quota)
+        let url = URL(string: "https://api.github.com/repos/xiangsam/MacCLIProxyAPI/releases?per_page=50")!
         do {
-            let version = try await fetchVersionFromAtom()
-            return makeLatest(version: version, platform: platform)
+            var request = URLRequest(url: url, timeoutInterval: 20)
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let releases = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                throw AppError("无法读取兼容内核发布列表")
+            }
+            for release in releases {
+                guard release["draft"] as? Bool != true, release["prerelease"] as? Bool != true,
+                      let tag = release["tag_name"] as? String, tag.hasPrefix("cpa-v"),
+                      let assets = release["assets"] as? [[String: Any]] else { continue }
+                let version = String(tag.dropFirst(5))
+                guard version.hasPrefix("8."), version.contains("-mac.") else { continue }
+                let latest = makeLatest(version: version, platform: platform)
+                if assets.contains(where: { $0["name"] as? String == latest.assetName }) { return latest }
+            }
+            throw AppError("尚无已发布的兼容内核")
         } catch {
-            errors.append("Atom: \(error.localizedDescription)")
+            // A pinned compatible version is safe when the GitHub API is rate-limited.
+            if let pinned = AppPaths.readBundledCoreVersion(), pinned.contains("-mac.") {
+                return makeLatest(version: pinned, platform: platform)
+            }
+            throw error
         }
-
-        // 2) Release page redirect (no API quota)
-        do {
-            let version = try await fetchVersionFromReleasePage()
-            return makeLatest(version: version, platform: platform)
-        } catch {
-            errors.append("Release 页: \(error.localizedDescription)")
-        }
-
-        // 3) GitHub REST API (may hit rate limit)
-        do {
-            return try await fetchLatestFromAPI(platform: platform)
-        } catch {
-            errors.append("API: \(error.localizedDescription)")
-        }
-
-        // 4) Fall back to bundled version pin if available
-        if let pinned = AppPaths.readBundledCoreVersion(), !pinned.isEmpty {
-            return makeLatest(version: pinned, platform: platform)
-        }
-
-        throw AppError(
-            "检查最新内核版本失败（\(errors.joined(separator: "；"))）。可尝试：指定版本安装，或选择本地 .tar.gz 安装包。"
-        )
     }
 
     func installLatest(progress: @escaping @MainActor (CoreInstallTask) -> Void) async throws -> CoreInstallResult {
@@ -86,7 +80,9 @@ actor CoreInstallService {
     ) async throws -> CoreInstallResult {
         let platform = detectPlatform()
         let ver = AppPaths.normalizeVersion(version)
-        guard !ver.isEmpty else { throw AppError("版本号不能为空") }
+        guard ver.range(of: #"^\d+\.\d+\.\d+(-mac\.\d+)?$"#, options: .regularExpression) != nil else {
+            throw AppError("请输入版本号，例如 8.0.21 或 8.0.21-mac.1")
+        }
         let latest = makeLatest(version: ver, platform: platform)
         return try await install(
             version: latest.version,
@@ -103,7 +99,7 @@ actor CoreInstallService {
     ) async throws -> CoreInstallResult {
         let name = archivePath.lastPathComponent
         try Self.validateArchiveFileName(name)
-        let version = versionFromAssetName(name) ?? AppPaths.readBundledCoreVersion() ?? "local"
+        let version = versionFromAssetName(name) ?? "local"
         return try await installLocalArchive(
             version: version,
             assetName: name,
@@ -115,123 +111,15 @@ actor CoreInstallService {
     private func makeLatest(version: String, platform: CorePlatform) -> CoreLatest {
         let ver = AppPaths.normalizeVersion(version)
         let expected = assetName(version: ver, platform: platform)
-        let url = URL(
-            string: "https://github.com/router-for-me/CLIProxyAPI/releases/download/v\(ver)/\(expected)"
-        )
-        return CoreLatest(version: ver, assetName: expected, downloadURL: url)
+        return CoreLatest(version: ver, assetName: expected,
+            downloadURL: Self.downloadURL(version: ver, assetName: expected))
     }
 
-    private func fetchVersionFromAtom() async throws -> String {
-        let url = URL(string: "https://github.com/router-for-me/CLIProxyAPI/releases.atom")!
-        var request = URLRequest(url: url, timeoutInterval: 20)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("application/atom+xml,application/xml,text/xml,*/*", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AppError("Atom 无响应")
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw AppError("HTTP \(http.statusCode)")
-        }
-        let text = String(data: data, encoding: .utf8) ?? ""
-        if let version = parseVersionFromAtom(text) {
-            return version
-        }
-        throw AppError("Atom 未解析到版本")
-    }
-
-    private func fetchVersionFromReleasePage() async throws -> String {
-        // Don't follow redirects automatically so we can read Location; use a
-        // session that does follow and then parse final URL.
-        let url = URL(string: "https://github.com/router-for-me/CLIProxyAPI/releases/latest")!
-        var request = URLRequest(url: url, timeoutInterval: 20)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml,*/*", forHTTPHeaderField: "Accept")
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AppError("Release 页无响应")
-        }
-        // Final URL after redirects, e.g. .../releases/tag/v7.2.109
-        let finalURL = http.url?.absoluteString ?? ""
-        if let range = finalURL.range(of: "/releases/tag/") {
-            let tag = String(finalURL[range.upperBound...])
-                .split(separator: "/")
-                .first
-                .map(String.init) ?? ""
-            let version = AppPaths.normalizeVersion(tag)
-            if !version.isEmpty { return version }
-        }
-        if !(200..<400).contains(http.statusCode) {
-            throw AppError("HTTP \(http.statusCode)")
-        }
-        throw AppError("Release 页未返回版本标签")
-    }
-
-    private func fetchLatestFromAPI(platform: CorePlatform) async throws -> CoreLatest {
-        let url = URL(string: "https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest")!
-        var request = URLRequest(url: url, timeoutInterval: 20)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AppError("API 无响应")
-        }
-        if http.statusCode == 403 || http.statusCode == 429 {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            if body.localizedCaseInsensitiveContains("rate limit") {
-                throw AppError("GitHub API 限流")
-            }
-            throw AppError("HTTP \(http.statusCode)")
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw AppError("HTTP \(http.statusCode)")
-        }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AppError("解析 JSON 失败")
-        }
-        let tag = (json["tag_name"] as? String) ?? ""
-        let version = AppPaths.normalizeVersion(tag)
-        guard !version.isEmpty else { throw AppError("无 tag_name") }
-
-        let expected = assetName(version: version, platform: platform)
-        var downloadURL: URL?
-        if let assets = json["assets"] as? [[String: Any]] {
-            for asset in assets {
-                if let name = asset["name"] as? String, name == expected {
-                    if let browser = asset["browser_download_url"] as? String {
-                        downloadURL = URL(string: browser)
-                    }
-                    break
-                }
-            }
-        }
-        if downloadURL == nil {
-            downloadURL = URL(
-                string: "https://github.com/router-for-me/CLIProxyAPI/releases/download/v\(version)/\(expected)"
-            )
-        }
-        return CoreLatest(version: version, assetName: expected, downloadURL: downloadURL)
-    }
-
-    private func parseVersionFromAtom(_ xml: String) -> String? {
-        // Prefer first <entry> link or title.
-        guard let entryRange = xml.range(of: "<entry>") else { return nil }
-        let entry = String(xml[entryRange.lowerBound...])
-        if let tagRange = entry.range(of: "/releases/tag/") {
-            let rest = entry[tagRange.upperBound...]
-            let tag = rest.split(whereSeparator: { "\"'<>?# \n\r\t".contains($0) }).first.map(String.init) ?? ""
-            let version = AppPaths.normalizeVersion(tag.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-            if !version.isEmpty { return version }
-        }
-        if let titleStart = entry.range(of: "<title>"),
-           let titleEnd = entry.range(of: "</title>", range: titleStart.upperBound..<entry.endIndex)
-        {
-            let title = String(entry[titleStart.upperBound..<titleEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let version = AppPaths.normalizeVersion(title)
-            if !version.isEmpty { return version }
-        }
-        return nil
+    static func downloadURL(version: String, assetName: String) -> URL? {
+        let patched = version.contains("-mac.")
+        let repository = patched ? "xiangsam/MacCLIProxyAPI" : "router-for-me/CLIProxyAPI"
+        let tag = patched ? "cpa-v" + version : "v" + version
+        return URL(string: "https://github.com/\(repository)/releases/download/\(tag)/\(assetName)")
     }
 
     private func versionFromAssetName(_ name: String) -> String? {
@@ -331,22 +219,57 @@ actor CoreInstallService {
         return result
     }
 
-    private func finalizeInstall(version: String, assetName: String) throws -> CoreInstallResult {
-        let staging = AppPaths.stagingDirectory
-        let install = AppPaths.installDirectory
-        let backup = AppPaths.backupDirectory
+    func finalizeInstall(
+        version: String, assetName: String,
+        staging: URL = AppPaths.stagingDirectory,
+        install: URL = AppPaths.installDirectory,
+        backup: URL = AppPaths.backupDirectory,
+        migrationBackups: URL = AppPaths.baseDirectory.appendingPathComponent("config-backups")
+    ) throws -> CoreInstallResult {
         let fm = FileManager.default
 
         // Preserve existing config.yaml if present.
         let existingConfig = install.appendingPathComponent(AppPaths.coreConfigFile)
         var preservedConfig: Data?
         if fm.fileExists(atPath: existingConfig.path) {
-            preservedConfig = try? Data(contentsOf: existingConfig)
+            preservedConfig = try Data(contentsOf: existingConfig)
         }
 
-        // Locate binary in staging (may be nested).
-        guard AppPaths.findCoreBinary(in: staging) != nil else {
+        guard let stagedBinary = AppPaths.findCoreBinary(in: staging) else {
             throw AppError("安装包中未找到 \(AppPaths.coreBinaryName)")
+        }
+        var migrationVersion = version
+        if version == "local" {
+            let example = stagedBinary.deletingLastPathComponent().appendingPathComponent(AppPaths.coreExampleConfigFile)
+            if let yaml = try? String(contentsOf: example, encoding: .utf8),
+               let root = try? CoreConfigLayout.parse(yaml), CoreConfigLayout.isV8(root) {
+                migrationVersion = CoreConfigLayout.usesEarlyV8Paths(root) ? "8.0.0" : "8"
+            }
+        }
+        var authRelativePath: String?
+        if let preservedConfig, let yaml = String(data: preservedConfig, encoding: .utf8) {
+            let root = try CoreConfigLayout.readLegacy(yaml)
+            if let authDir = root["auth-dir"] as? String {
+                let resolved = AppPaths.resolveAuthDirectory(authDir: authDir, installDir: install).standardizedFileURL
+                let prefix = install.standardizedFileURL.path + "/"
+                if resolved.path == install.standardizedFileURL.path {
+                    throw AppError("auth-dir 不能指向内核安装目录本身；请先迁移到独立目录")
+                }
+                var isDirectory: ObjCBool = false
+                if resolved.path.hasPrefix(prefix), fm.fileExists(atPath: resolved.path, isDirectory: &isDirectory) {
+                    guard isDirectory.boolValue else { throw AppError("auth-dir 必须指向目录") }
+                    authRelativePath = String(resolved.path.dropFirst(prefix.count))
+                }
+            }
+        }
+
+        // Validate and migrate before moving either installation. A parse/read failure must
+        // never replace a working core or silently discard its credentials.
+        let migratedConfig: Data? = try preservedConfig.map { data in
+            guard let yaml = String(data: data, encoding: .utf8) else {
+                throw AppError("内核配置不是 UTF-8；已保留当前安装")
+            }
+            return Data(try CoreConfigLayout.migrate(yaml, to: migrationVersion).utf8)
         }
 
         if fm.fileExists(atPath: backup.path) {
@@ -359,10 +282,21 @@ actor CoreInstallService {
 
         do {
             try fm.moveItem(at: staging, to: install)
+            // Custom auth directories inside cpa-core must survive replacing that directory.
+            // The default ../oauth lives outside it and needs no copy.
+            if let authRelativePath {
+                let destination = install.appendingPathComponent(authRelativePath)
+                if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
+                try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.copyItem(at: backup.appendingPathComponent(authRelativePath), to: destination)
+            }
 
-            if let preservedConfig {
+            if let migratedConfig {
+                if let preservedConfig, preservedConfig != migratedConfig {
+                    try CoreConfigStore.backupBeforeMigration(preservedConfig, directory: migrationBackups)
+                }
                 let configURL = install.appendingPathComponent(AppPaths.coreConfigFile)
-                try preservedConfig.write(to: configURL, options: .atomic)
+                try migratedConfig.write(to: configURL, options: .atomic)
                 try AppPaths.secureSensitiveFile(configURL)
             }
 
@@ -378,7 +312,7 @@ actor CoreInstallService {
                 "installed_at_unix": Int(Date().timeIntervalSince1970),
             ]
             let metaData = try JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted, .sortedKeys])
-            try metaData.write(to: AppPaths.coreMetadataURL, options: .atomic)
+            try metaData.write(to: install.appendingPathComponent(AppPaths.coreMetadataFile), options: .atomic)
         } catch {
             try? fm.removeItem(at: install)
             if hadExistingInstall, fm.fileExists(atPath: backup.path) {

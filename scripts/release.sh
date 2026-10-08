@@ -157,7 +157,7 @@ shasum -a 256 -c ${ZIP_NAME}.sha256
 - 系统设置 → 隐私与安全性 → 仍要打开
 - 或：\`xattr -dr com.apple.quarantine MacCLIProxyAPI.app\`
 
-启动后到「版本」→「更新到最新版本」在线装上内核，再在首页启动内核。
+启动后到「版本」→「安装兼容内核 / 更新兼容内核」在线装上内核，再在首页启动内核。
 
 ## 说明
 

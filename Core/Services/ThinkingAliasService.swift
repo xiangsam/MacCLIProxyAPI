@@ -225,9 +225,7 @@ enum ThinkingAliasService {
     // MARK: - Parse
 
     private static func parseAliases(from yaml: String) throws -> [ThinkingAliasEntry] {
-        guard let root = try Yams.load(yaml: yaml) as? [String: Any] else {
-            return []
-        }
+        let root = try CoreConfigLayout.readLegacy(yaml)
         var entries: [ThinkingAliasEntry] = []
 
         if let oauth = root["oauth-model-alias"] as? [String: Any],
@@ -303,15 +301,6 @@ enum ThinkingAliasService {
     }
 
     private static func mutateYAML(_ yaml: String, mutate: (inout [String: Any]) throws -> Void) throws -> String {
-        var root: [String: Any]
-        if yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            root = [:]
-        } else if let parsed = try Yams.load(yaml: yaml) as? [String: Any] {
-            root = parsed
-        } else {
-            throw AppError("解析内核 config.yaml 失败")
-        }
-        try mutate(&root)
-        return try Yams.dump(object: root, width: -1, sortKeys: false)
+        try CoreConfigLayout.mutate(yaml, mutate)
     }
 }

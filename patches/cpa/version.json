@@ -1,0 +1,6 @@
+{
+  "upstreamVersion": "8.0.21",
+  "upstreamCommit": "54946fa3dfa29c6ca7312ac141a92cdd5e413771",
+  "version": "8.0.21-mac.1",
+  "goVersion": "1.26.0"
+}

@@ -18,19 +18,16 @@ enum CoreConfigStore {
         let exampleURL = AppPaths.coreExampleConfigURL
         let configURL = AppPaths.coreConfigURL
 
-        guard FileManager.default.fileExists(atPath: exampleURL.path) else {
-            // No template yet (core not fully installed). Write a minimal config.
-            let minimal = minimalConfigYAML(gui: gui)
-            try minimal.write(to: configURL, atomically: true, encoding: .utf8)
-            try AppPaths.secureSensitiveFile(configURL)
-            return configURL
-        }
-
-        let template = try String(contentsOf: exampleURL, encoding: .utf8)
         let current = FileManager.default.fileExists(atPath: configURL.path)
-            ? try String(contentsOf: configURL, encoding: .utf8)
-            : nil
+            ? try String(contentsOf: configURL, encoding: .utf8) : nil
+        let template = FileManager.default.fileExists(atPath: exampleURL.path)
+            ? try String(contentsOf: exampleURL, encoding: .utf8) : minimalConfigYAML(gui: gui)
         let merged = try mergeYAML(template: template, current: current, gui: gui)
+        if let current, current != merged,
+           !CoreConfigLayout.isV8(try CoreConfigLayout.parse(current)),
+           CoreConfigLayout.isV8(try CoreConfigLayout.parse(merged)) {
+            try backupBeforeMigration(Data(current.utf8), directory: AppPaths.baseDirectory.appendingPathComponent("config-backups"))
+        }
         try merged.write(to: configURL, atomically: true, encoding: .utf8)
         try AppPaths.secureSensitiveFile(configURL)
         return configURL
@@ -77,10 +74,8 @@ enum CoreConfigStore {
 
     // MARK: - YAML helpers
 
-    private static func parseCoreSettings(from text: String, fallback: GuiConfigFile) throws -> CoreConfigSettings {
-        guard let root = try Yams.load(yaml: text) as? [String: Any] else {
-            return fallback.coreConfigSettings
-        }
+    static func parseCoreSettings(from text: String, fallback: GuiConfigFile) throws -> CoreConfigSettings {
+        let root = try CoreConfigLayout.readLegacy(text)
 
         let port = (root["port"] as? Int).flatMap { UInt16(exactly: $0) } ?? fallback.port
         let host = (root["host"] as? String) ?? fallback.host
@@ -97,7 +92,7 @@ enum CoreConfigStore {
                 return GuiApiKey(apiKey: key, remark: remark)
             }
         }
-        if apiKeys.isEmpty {
+        if root["api-keys"] == nil {
             apiKeys = fallback.apiKeys
         } else {
             // Preserve remarks from GUI config when possible.
@@ -141,73 +136,64 @@ enum CoreConfigStore {
         )
     }
 
-    private static func mergeYAML(template: String, current: String?, gui: GuiConfigFile) throws -> String {
-        var base = template
-        if let current,
-           let currentRoot = try Yams.load(yaml: current) as? [String: Any],
-           var templateRoot = try Yams.load(yaml: template) as? [String: Any]
-        {
-            deepMerge(into: &templateRoot, from: currentRoot)
-            // Keep provider sections from current if present.
-            base = try Yams.dump(object: templateRoot, width: -1, sortKeys: false)
+    static func mergeYAML(template: String, current: String?, gui: GuiConfigFile) throws -> String {
+        // A shipped example contains sample client keys and defaults. Never merge those over
+        // an existing document: v8 defaults would silently shadow legacy user settings.
+        var base = current ?? template
+        let templateRoot = try CoreConfigLayout.parse(template)
+        if let current, !CoreConfigLayout.isV8(try CoreConfigLayout.parse(current)), CoreConfigLayout.isV8(templateRoot) {
+            let schemaVersion = CoreConfigLayout.usesEarlyV8Paths(templateRoot) ? "8.0.0" : "8"
+            base = try CoreConfigLayout.migrate(base, to: schemaVersion)
         }
         return try applyGUIManagedSettings(to: base, gui: gui)
     }
 
-    private static func deepMerge(into target: inout [String: Any], from source: [String: Any]) {
-        for (key, value) in source {
-            if var targetDict = target[key] as? [String: Any], let sourceDict = value as? [String: Any] {
-                deepMerge(into: &targetDict, from: sourceDict)
-                target[key] = targetDict
-            } else {
-                target[key] = value
-            }
-        }
+    static func backupBeforeMigration(_ data: Data, directory: URL) throws {
+        try AppPaths.ensurePrivateDirectory(directory)
+        let backup = directory.appendingPathComponent("config.pre-v8-\(UUID().uuidString).yaml")
+        try data.write(to: backup, options: .atomic)
+        try AppPaths.secureSensitiveFile(backup)
     }
 
-    private static func applyGUIManagedSettings(to content: String, gui: GuiConfigFile) throws -> String {
-        guard var root = try Yams.load(yaml: content) as? [String: Any] else {
-            return minimalConfigYAML(gui: gui)
-        }
+    static func applyGUIManagedSettings(to content: String, gui: GuiConfigFile) throws -> String {
+        try CoreConfigLayout.mutate(content) { root in
+            root["host"] = gui.effectiveHost
+            root["port"] = Int(gui.port)
+            root["auth-dir"] = gui.authDir
+            root["usage-statistics-enabled"] = gui.usageStatisticsEnabled
+            root["proxy-url"] = gui.proxyUrl
+            root["api-keys"] = resolvedAPIKeys(gui: gui, existingRoot: root)
 
-        root["host"] = gui.effectiveHost
-        root["port"] = Int(gui.port)
-        root["auth-dir"] = gui.authDir
-        root["usage-statistics-enabled"] = gui.usageStatisticsEnabled
-        root["proxy-url"] = gui.proxyUrl
-        root["api-keys"] = resolvedAPIKeys(gui: gui, existingRoot: root)
-
-        var remote = (root["remote-management"] as? [String: Any]) ?? [:]
-        // Keep existing bcrypt hash if GUI still has the plaintext default placeholder
-        // and yaml already stores a hashed secret — avoid thrashing auth.
-        let guiSecret = gui.managementSecretKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let existingSecret = (remote["secret-key"] as? String) ?? ""
-        if guiSecret.isEmpty {
-            // leave existing
-        } else if existingSecret.hasPrefix("$2a$") || existingSecret.hasPrefix("$2b$") {
-            // Core already hashed the secret; only replace if GUI changed away from known plaintext.
-            // Plain "123456" matching default should not overwrite hash every restart.
-            if guiSecret != AppPaths.defaultManagementSecret && guiSecret != existingSecret {
+            var remote = (root["remote-management"] as? [String: Any]) ?? [:]
+            // Keep existing bcrypt hash if GUI still has the plaintext default placeholder
+            // and yaml already stores a hashed secret — avoid thrashing auth.
+            let guiSecret = gui.managementSecretKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            let existingSecret = (remote["secret-key"] as? String) ?? ""
+            if guiSecret.isEmpty {
+                // leave existing
+            } else if existingSecret.hasPrefix("$2a$") || existingSecret.hasPrefix("$2b$") {
+                // Core already hashed the secret; only replace if GUI changed away from known plaintext.
+                // Plain "123456" matching default should not overwrite hash every restart.
+                if guiSecret != AppPaths.defaultManagementSecret && guiSecret != existingSecret {
+                    remote["secret-key"] = guiSecret
+                }
+            } else {
                 remote["secret-key"] = guiSecret
             }
-        } else {
-            remote["secret-key"] = guiSecret
+            if remote["allow-remote"] == nil {
+                remote["allow-remote"] = false
+            }
+            root["remote-management"] = remote
+
+            var routing = (root["routing"] as? [String: Any]) ?? [:]
+            routing["strategy"] = gui.routingStrategy
+            routing["session-affinity"] = gui.routingSessionAffinity
+            routing["session-affinity-ttl"] = Self.normalizeSessionAffinityTTL(gui.routingSessionAffinityTtl)
+            root["routing"] = routing
+
+            applyOverlappingModelPolicy(gui.overlappingModelPolicy, to: &root)
+            applyCodexOptimizeMultiAgentV2(to: &root, enabled: gui.optimizeCodexMultiAgentV2)
         }
-        if remote["allow-remote"] == nil {
-            remote["allow-remote"] = false
-        }
-        root["remote-management"] = remote
-
-        var routing = (root["routing"] as? [String: Any]) ?? [:]
-        routing["strategy"] = gui.routingStrategy
-        routing["session-affinity"] = gui.routingSessionAffinity
-        routing["session-affinity-ttl"] = Self.normalizeSessionAffinityTTL(gui.routingSessionAffinityTtl)
-        root["routing"] = routing
-
-        applyOverlappingModelPolicy(gui.overlappingModelPolicy, to: &root)
-        applyCodexOptimizeMultiAgentV2(to: &root, enabled: gui.optimizeCodexMultiAgentV2)
-
-        return try Yams.dump(object: root, width: -1, sortKeys: false)
     }
 
     /// Value a native-Responses leg needs for `disable-image-generation`.
@@ -224,15 +210,15 @@ enum CoreConfigStore {
     @discardableResult
     static func ensureNativeResponsesPrerequisites(client: ManagementClient) async throws -> Bool {
         let yaml = try await client.getConfigYAML()
-        guard var root = try Yams.load(yaml: yaml) as? [String: Any] else { return false }
+        let root = try CoreConfigLayout.readLegacy(yaml)
         let current = root["disable-image-generation"]
         if let mode = current as? String, mode == nativeResponsesImageGenerationMode {
             return false
         }
         // `true` already suppresses injection; don't downgrade a stricter user choice.
         if let flag = current as? Bool, flag { return false }
-        root["disable-image-generation"] = nativeResponsesImageGenerationMode
-        try await client.putConfigYAML(try Yams.dump(object: root, width: -1, sortKeys: false))
+        let updated = try CoreConfigLayout.mutate(yaml) { $0["disable-image-generation"] = nativeResponsesImageGenerationMode }
+        try await client.putConfigYAML(updated)
         return true
     }
 
@@ -256,7 +242,7 @@ enum CoreConfigStore {
     static func legacyOverlappingModelPolicy(yaml: String, apiOnly: Bool) -> OverlappingModelPolicy {
         // The explicit old global choice wins if an old client profile created a conflict.
         if apiOnly { return .apiOnly }
-        guard let root = try? Yams.load(yaml: yaml) as? [String: Any] else { return .automatic }
+        guard let root = try? CoreConfigLayout.readLegacy(yaml) else { return .automatic }
         let patterns = Set(codexOverlappingModelExclusions)
         for section in CodexSubscriptionIsolation.credentialSections {
             for row in root[section] as? [[String: Any]] ?? [] {
@@ -326,13 +312,8 @@ enum CoreConfigStore {
         return []
     }
 
-    private static func patchAPIKeys(in content: String, keys: [String]) throws -> String {
-        guard var root = try Yams.load(yaml: content) as? [String: Any] else {
-            return content
-        }
-        // Explicit patch always writes the provided list (including intentional empty after delete).
-        root["api-keys"] = keys
-        return try Yams.dump(object: root, width: -1, sortKeys: false)
+    static func patchAPIKeys(in content: String, keys: [String]) throws -> String {
+        try CoreConfigLayout.mutate(content) { $0["api-keys"] = keys }
     }
 
     private static func minimalConfigYAML(gui: GuiConfigFile) -> String {

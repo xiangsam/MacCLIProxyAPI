@@ -436,7 +436,7 @@ enum AgentModelCatalogService {
     private static func loadConfigRoot(from configURL: URL) -> [String: Any]? {
         guard FileManager.default.fileExists(atPath: configURL.path),
               let text = try? String(contentsOf: configURL, encoding: .utf8),
-              let loaded = try? Yams.load(yaml: text)
+              let loaded = try? CoreConfigLayout.readLegacy(text)
         else { return nil }
         return dictionary(loaded)
     }
@@ -468,7 +468,7 @@ enum AgentModelCatalogService {
             guard let id = string(row["alias"]) ?? string(row["name"]), !id.isEmpty else {
                 return nil
             }
-            return Model(id: id, owner: owner)
+            return Model(id: id, owner: string(row["owned-by"]) ?? owner)
         }
     }
 

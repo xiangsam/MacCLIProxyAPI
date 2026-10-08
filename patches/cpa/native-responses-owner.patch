@@ -1,0 +1,109 @@
+diff --git a/internal/config/config_types.go b/internal/config/config_types.go
+index c3584aa..bed7e2c 100644
+--- a/internal/config/config_types.go
++++ b/internal/config/config_types.go
+@@ -690,6 +690,9 @@ func (k CodexKey) GetProxyURL() string { return k.ProxyURL }
+ 
+ // CodexModel describes a mapping between an alias and the actual upstream model name.
+ type CodexModel struct {
++	// OwnedBy overrides model-list attribution without changing the native Responses executor.
++	OwnedBy string `yaml:"owned-by,omitempty" json:"owned-by,omitempty"`
++
+ 	// Name is the upstream model identifier used when issuing requests.
+ 	Name string `yaml:"name" json:"name"`
+ 
+diff --git a/sdk/cliproxy/service_models.go b/sdk/cliproxy/service_models.go
+index a444b64..2849ec1 100644
+--- a/sdk/cliproxy/service_models.go
++++ b/sdk/cliproxy/service_models.go
+@@ -2,6 +2,7 @@ package cliproxy
+ 
+ import (
+ 	"context"
++	"net/url"
+ 	"strconv"
+ 	"strings"
+ 	"time"
+@@ -926,7 +927,8 @@ func buildCodexConfigModels(entry *config.CodexKey) []*ModelInfo {
+ 		return models
+ 	}
+ 
+-	models := buildConfigModels(entry.Models, "openai", "openai", "codex")
++	models := buildConfigModels(entry.Models, nativeResponsesOwner(entry.BaseURL), "openai", "codex")
++	configuredOwners := make(map[string]string, len(entry.Models))
+ 	configuredDisplayNames := make(map[string]string, len(entry.Models))
+ 	configuredConfigurationUpdates := make(map[string]bool, len(entry.Models))
+ 	seenConfiguredModels := make(map[string]struct{}, len(entry.Models))
+@@ -945,6 +947,7 @@ func buildCodexConfigModels(entry *config.CodexKey) []*ModelInfo {
+ 		}
+ 		seenConfiguredModels[key] = struct{}{}
+ 		configuredConfigurationUpdates[key] = model.SupportConfigurationUpdate
++		configuredOwners[key] = strings.TrimSpace(model.OwnedBy)
+ 
+ 		displayName := strings.TrimSpace(model.DisplayName)
+ 		if displayName != "" {
+@@ -960,6 +963,9 @@ func buildCodexConfigModels(entry *config.CodexKey) []*ModelInfo {
+ 			model.DisplayName = displayName
+ 		}
+ 		model.SupportConfigurationUpdate = configuredConfigurationUpdates[key]
++		if owner := configuredOwners[key]; owner != "" {
++			model.OwnedBy = owner
++		}
+ 	}
+ 	return models
+ }
+@@ -1196,3 +1202,23 @@ func applyOAuthSettingEntries(settings []config.OAuthModelSetting, models []*Mod
+ 	}
+ 	return out
+ }
++
++// The executor/protocol remains Codex; model ownership follows the configured upstream.
++// Unknown gateways keep their hostname rather than pretending to be OpenAI.
++func nativeResponsesOwner(baseURL string) string {
++	if strings.TrimSpace(baseURL) == "" {
++		return "openai"
++	}
++	parsed, err := url.Parse(strings.TrimSpace(baseURL))
++	if err != nil || parsed.Hostname() == "" {
++		return "unknown"
++	}
++	host := strings.ToLower(parsed.Hostname())
++	if host == "openai.com" || strings.HasSuffix(host, ".openai.com") || host == "chatgpt.com" || strings.HasSuffix(host, ".chatgpt.com") {
++		return "openai"
++	}
++	if host == "deepseek.com" || strings.HasSuffix(host, ".deepseek.com") {
++		return "deepseek"
++	}
++	return host
++}
+diff --git a/sdk/cliproxy/mac_native_owner_test.go b/sdk/cliproxy/mac_native_owner_test.go
+new file mode 100644
+--- /dev/null
++++ b/sdk/cliproxy/mac_native_owner_test.go
+@@ -0,0 +1,26 @@
++package cliproxy
++
++import (
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"testing"
++)
++
++func TestMacNativeResponsesOwnership(t *testing.T) {
++	for _, tc := range []struct{ base, owner string }{
++		{"", "openai"}, {"https://api.openai.com/v1", "openai"},
++		{"https://chatgpt.com/backend-api", "openai"},
++		{"https://api.deepseek.com/v1", "deepseek"},
++		{"https://api.deepseek.com.evil.example", "api.deepseek.com.evil.example"},
++		{"https://gateway.example/v1", "gateway.example"},
++	} {
++		entry := &config.CodexKey{BaseURL: tc.base, Models: []config.CodexModel{{Name: "deepseek-v4-flash", Alias: "fast"}}}
++		models := buildCodexConfigModels(entry)
++		if len(models) != 1 || models[0].OwnedBy != tc.owner || models[0].Type != "openai" || models[0].ID != "fast" {
++			t.Fatalf("base %s: unexpected model metadata: %+v", tc.base, models)
++		}
++	}
++	entry := &config.CodexKey{BaseURL: "https://gateway.example", Models: []config.CodexModel{{Name: "model", OwnedBy: "DeepSeek"}}}
++	if got := buildCodexConfigModels(entry)[0].OwnedBy; got != "DeepSeek" {
++		t.Fatalf("explicit owner = %s", got)
++	}
++}

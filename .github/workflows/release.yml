@@ -11,7 +11,10 @@ permissions:
   contents: write
 
 jobs:
+  patched-core:
+    uses: ./.github/workflows/patched-core.yml
   build:
+    needs: patched-core
     runs-on: macos-15
     steps:
       - name: Checkout

@@ -94,6 +94,7 @@
 		F1615B5173370BA5133B79DA /* RemoteAgentDefaultSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A1241C674CB6449C6B7348 /* RemoteAgentDefaultSnapshot.swift */; };
 		F2FD131B0BA77C0BA2B916FE /* CodexModelCatalogWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6C9761F8457EE880573933 /* CodexModelCatalogWriter.swift */; };
 		F5A5B9E61723D07889371254 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54C71765A85653F04733C2EB /* AppState.swift */; };
+		840110313058D80F66346E56 /* CoreConfigLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1A3BD1E4514FFF6496F571 /* CoreConfigLayoutTests.swift */; };
 		8624DC9FA871CF724B0B7D0C /* ModelCapabilityStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28836B725E6EDB7FCE27E09 /* ModelCapabilityStoreTests.swift */; };
 		F763A4C4049D4FDCF0539040 /* CoreInstallServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 055560BAB4BBFBCCAB1909D9 /* CoreInstallServiceTests.swift */; };
 		F7AA5FF1A3EA8A225382F33D /* ManagementModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E75BACA3A54419C0AE7DCF /* ManagementModelsTests.swift */; };
@@ -101,6 +102,7 @@
 		FA823F96F6F1A6EA3C374895 /* ProviderConnectionTester.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0756E104E21A2A72184E0C4 /* ProviderConnectionTester.swift */; };
 		FB6F767C1B4AC5E45359476E /* ThinkingAliasService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40332CD83431764C1EAEA5B0 /* ThinkingAliasService.swift */; };
 		FBAEF60567BE1CB90CC8C564 /* gpt5_5_template.json in Resources */ = {isa = PBXBuildFile; fileRef = 2D76D87EB897EED6CD5DA6CC /* gpt5_5_template.json */; };
+		8BCD8D826298D80DAE6E5BA3 /* CoreConfigLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A6A9974C53E047197FFC59 /* CoreConfigLayout.swift */; };
 		79A9137DAADF2DAF668E3919 /* ModelCapabilityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC014DFD2B4215DBDCD6A8C /* ModelCapabilityStore.swift */; };
 		FD29C5FDDBF7B3ECDFBDB4E1 /* CoreProcessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A842962DC2071A31A5DF3A /* CoreProcessService.swift */; };
 		FE47FF76B54009FD463B960E /* AgentLiveConfigWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E6B8524720414D97B78A7C /* AgentLiveConfigWriter.swift */; };
@@ -119,8 +121,10 @@
 /* Begin PBXFileReference section */
 		002032D96C07B1FD9603FCC9 /* ProviderIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIconView.swift; sourceTree = "<group>"; };
 		038B11EF2A9E825A5AD41AFF /* UsageRecordsPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageRecordsPageView.swift; sourceTree = "<group>"; };
+		0A1A3BD1E4514FFF6496F571 /* CoreConfigLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreConfigLayoutTests.swift; sourceTree = "<group>"; };
 		C28836B725E6EDB7FCE27E09 /* ModelCapabilityStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCapabilityStoreTests.swift; sourceTree = "<group>"; };
 		055560BAB4BBFBCCAB1909D9 /* CoreInstallServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreInstallServiceTests.swift; sourceTree = "<group>"; };
+		A5A6A9974C53E047197FFC59 /* CoreConfigLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreConfigLayout.swift; sourceTree = "<group>"; };
 		4CC014DFD2B4215DBDCD6A8C /* ModelCapabilityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCapabilityStore.swift; sourceTree = "<group>"; };
 		06A842962DC2071A31A5DF3A /* CoreProcessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreProcessService.swift; sourceTree = "<group>"; };
 		06F181F2D7EAB8FC4501342C /* RemoteAgentConfiguratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentConfiguratorTests.swift; sourceTree = "<group>"; };
@@ -315,6 +319,7 @@
 				24AB88433CF74B0D6B397A88 /* AgentLiveConfigWriterTests.swift */,
 				E672800C970B56C5A28519A1 /* AppPathsTests.swift */,
 				90EA882DE6C0C9BF7B643027 /* CodexEncryptedContentSanitizerTests.swift */,
+				0A1A3BD1E4514FFF6496F571 /* CoreConfigLayoutTests.swift */,
 				C28836B725E6EDB7FCE27E09 /* ModelCapabilityStoreTests.swift */,
 				055560BAB4BBFBCCAB1909D9 /* CoreInstallServiceTests.swift */,
 				4AFEB237BDA980C7C8C88D20 /* DiagnosticServiceTests.swift */,
@@ -397,6 +402,7 @@
 				E28F06BE83C00D20385E3D0C /* ContextWindowFormat.swift */,
 				75FAA9A1C224B2B204016F1B /* CoreConfigStore.swift */,
 				4DE2CCCBCB3650F10B4B8B15 /* CoreInstallService.swift */,
+				A5A6A9974C53E047197FFC59 /* CoreConfigLayout.swift */,
 				4CC014DFD2B4215DBDCD6A8C /* ModelCapabilityStore.swift */,
 				06A842962DC2071A31A5DF3A /* CoreProcessService.swift */,
 				85A5EEC053F54BE1838FFCA0 /* DiagnosticService.swift */,
@@ -609,6 +615,7 @@
 				A20A6E1A3E880CED5AFB748D /* AgentLiveConfigWriterTests.swift in Sources */,
 				D07C51FFD41891CCFCCE5FDD /* AppPathsTests.swift in Sources */,
 				BBB76D899762C54B80D5F86B /* CodexEncryptedContentSanitizerTests.swift in Sources */,
+				840110313058D80F66346E56 /* CoreConfigLayoutTests.swift in Sources */,
 				8624DC9FA871CF724B0B7D0C /* ModelCapabilityStoreTests.swift in Sources */,
 				F763A4C4049D4FDCF0539040 /* CoreInstallServiceTests.swift in Sources */,
 				2BCFA0F9E1015ED3015FCE9F /* DiagnosticServiceTests.swift in Sources */,
@@ -657,6 +664,7 @@
 				507E3F0D0523765511224643 /* ContextWindowFormat.swift in Sources */,
 				8DB583DF67644CCAED4F40BF /* CoreConfigStore.swift in Sources */,
 				24899B3C61B757654BA8ED15 /* CoreInstallService.swift in Sources */,
+				8BCD8D826298D80DAE6E5BA3 /* CoreConfigLayout.swift in Sources */,
 				79A9137DAADF2DAF668E3919 /* ModelCapabilityStore.swift in Sources */,
 				FD29C5FDDBF7B3ECDFBDB4E1 /* CoreProcessService.swift in Sources */,
 				8BA1F7DBDDD512206D1B1C2E /* DesignSystem.swift in Sources */,

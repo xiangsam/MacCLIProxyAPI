@@ -71,7 +71,7 @@ struct KernelVersionsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("内核版本")
                     .font(.title2.weight(.bold))
-                Text("安装或更新 CLIProxyAPI 核心，管理本地代理能力")
+                Text("默认使用带模型归属修复的兼容内核；官方版本可在指定版本中安装")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if let at = appState.lastCoreUpdateCheckAt {
@@ -98,7 +98,7 @@ struct KernelVersionsView: View {
                 }
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .help("启动后与每隔约 6 小时自动检查 GitHub 最新内核")
+                .help("启动后与每隔约 6 小时自动检查 GitHub 最新兼容内核")
             }
         }
     }
@@ -332,7 +332,7 @@ struct KernelVersionsView: View {
                     pendingInstall = .latest
                 } label: {
                     Label(
-                        appState.coreStatus.installed ? "更新到最新版本" : "安装最新版本",
+                        appState.coreStatus.installed ? "更新兼容内核" : "安装兼容内核",
                         systemImage: "arrow.down.circle.fill"
                     )
                     .frame(maxWidth: .infinity)
@@ -465,11 +465,11 @@ struct KernelVersionsView: View {
                 Text("指定版本")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
-                Text("从 GitHub Release 下载对应 darwin 架构包，例如 7.2.110")
+                Text("8.0.21-mac.1 为带模型归属修复的兼容内核；纯数字版本为官方内核，原生 Responses 模型仍可能标为 OpenAI。")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                 HStack(spacing: 10) {
-                    TextField("7.2.110", text: $manualVersion)
+                    TextField("8.0.21-mac.1", text: $manualVersion)
                         .textFieldStyle(.roundedBorder)
                     Button(appState.coreStatus.running ? "停止并安装" : "安装") {
                         pendingAdvancedInstall = .version(
@@ -561,7 +561,7 @@ struct KernelVersionsView: View {
     private func confirmLabel(_ pending: PendingInstall) -> String {
         switch pending {
         case .latest:
-            return appState.coreStatus.installed ? "更新到最新版本" : "安装最新版本"
+            return appState.coreStatus.installed ? "更新兼容内核" : "安装兼容内核"
         case .version(let version):
             return "安装 v\(AppPaths.normalizeVersion(version))"
         case .localArchive(let url):
@@ -577,6 +577,7 @@ struct KernelVersionsView: View {
             lines.append("会先停止正在运行的内核，安装完成后不会自动启动。")
         }
 
+        lines.append("升级到 v8 会先备份并迁移配置，保留订阅凭据和上游分组。v8 配置不能直接用于 v7。")
         return lines.joined(separator: "\n\n")
     }
 

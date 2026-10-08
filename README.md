@@ -178,7 +178,7 @@ xattr -dr com.apple.quarantine /Applications/MacCLIProxyAPI.app
 
 然后：
 
-1. 打开应用 → **版本** → **更新到最新版本**（联网安装，也可指定版本或本地 `.tar.gz`）  
+1. 打开应用 → **版本** → **安装兼容内核 / 更新兼容内核**（联网安装，也可指定版本或本地 `.tar.gz`）
 2. **首页** 启动内核  
 3. **订阅授权 / 上游 API** 添加账号
 4. 需要时在 **客户端接入** 为 Claude Code / Codex 等写入配置
@@ -359,4 +359,24 @@ LICENSE        # MIT
 
 ## 上游与许可证
 
-本项目自身代码以 [MIT License](LICENSE) 开源。应用是独立的 macOS GUI，**不包含** CLIProxyAPI 源码；内核及 Release 包遵循上游许可证。使用本仓库时请同时遵守 CLIProxyAPI、Yams、品牌图标及其他第三方资源的许可要求。
+本项目自身代码以 [MIT License](LICENSE) 开源。应用是独立的 macOS GUI；本仓库维护少量 CLIProxyAPI 补丁，完整内核在构建时从固定上游提交获取，内核及 Release 包遵循上游许可证。使用本仓库时请同时遵守 CLIProxyAPI、Yams、品牌图标及其他第三方资源的许可要求。
+
+### CPA v8 兼容与迁移
+
+默认安装渠道为本项目维护的兼容内核（版本带 `-mac.N`），基于固定上游提交构建。
+它修正原生 Responses API-key 模型的 `/v1/models.owned_by`：DeepSeek 官方端点返回
+`deepseek`，其他网关返回域名；模型行可用 `owned-by` 显式声明归属。
+Responses 执行器、别名、优先级和 OAuth 订阅行为保持原样。
+在“指定版本”输入纯数字版本仍会安装官方内核，官方版本没有此归属补丁。
+构建与验证方法见 [内核补丁说明](patches/cpa/README.md)。
+
+升级到 v8 时，应用将旧配置迁移为 `server`、`access`、`management`、`oauth`、
+`api-keys.<协议>` 等新结构。现有 v8 值优先，含明确的 `false`、`null` 与空列表。
+早期 v8 的 OAuth 设置路径在普通保存时保留，安装兼容内核后再迁移到新版 `client` / `upstream` 路径。
+保存 GUI 设置不会把 `access.api-keys` 客户端密钥写进上游分组，也不会覆盖分组中各 key 的继承/覆盖设置。
+管理凭据接口继续使用上游支持的 v0 兼容端点；编辑原生凭据后，上游可能将分组展开为每个凭据一个组，实际字段值保留。
+未知配置字段保留；YAML 注释和格式可能重新排版，原文在备份中。
+
+迁移前原文保存在 `~/Library/Application Support/com.maccliproxyapi/config-backups/`，权限为 `0600`，
+不会随下一次安装清理。最近一次旧内核目录仍保存在同级 `cpa-core.backup`。
+无法读取、解析或迁移配置时终止安装；v8 配置不能直接降级到 v7，需要先恢复升级前的配置。

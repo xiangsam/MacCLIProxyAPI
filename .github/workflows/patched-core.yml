@@ -1,0 +1,68 @@
+name: Patched CPA core
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.0'
+          cache: false
+      - name: Build and test pinned core
+        run: ./scripts/build-patched-core.sh "${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patched-core-${{ matrix.arch }}
+          path: dist/CLIProxyAPI_*.tar.gz
+          if-no-files-found: error
+  publish:
+    needs: build
+    concurrency: patched-cpa-publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: patched-core-*
+          path: dist
+          merge-multiple: true
+      - name: Release metadata
+        id: meta
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("patches/cpa/version.json"))["version"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          cp patches/cpa/native-responses-owner.patch dist/
+          cp patches/cpa/version.json dist/
+          cd dist
+          sha256sum CLIProxyAPI_*.tar.gz > checksums.txt
+      - name: Publish immutable compatible core
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CORE_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          tag="cpa-v${CORE_VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # A patch revision is immutable; confirm required assets instead of overwriting it.
+            gh release download "$tag" --pattern 'checksums.txt' --pattern 'native-responses-owner.patch' --pattern 'version.json' --dir existing
+            cmp existing/native-responses-owner.patch patches/cpa/native-responses-owner.patch
+            cmp existing/version.json patches/cpa/version.json
+            for asset in dist/CLIProxyAPI_*.tar.gz; do
+              grep -F "$(basename "$asset")" existing/checksums.txt >/dev/null
+            done
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --latest=false \
+              --title "CPA ${CORE_VERSION} · native Responses ownership fix" \
+              --notes-file patches/cpa/RELEASE.md dist/CLIProxyAPI_*.tar.gz dist/checksums.txt dist/version.json dist/native-responses-owner.patch
+          fi

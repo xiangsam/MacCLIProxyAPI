@@ -398,7 +398,7 @@ enum CodexModelCatalogWriter {
     }
 
     private static func loadTemplateFromModelsCache() -> [String: Any]? {
-        let url = FileManager.default.homeDirectoryForCurrentUser
+        let url = AppPaths.homeDirectory
             .appendingPathComponent(".codex/models_cache.json")
         guard
             let data = try? Data(contentsOf: url),
